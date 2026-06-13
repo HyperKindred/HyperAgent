@@ -16,7 +16,8 @@ SessionLocal = sessionmaker(bind=engine)
 
 def init_db():
     """Create all tables if they don't exist yet."""
-    from app.schedule.models import Event  # noqa: F401 – register model on Base
+    from app.schedule.models import Event  # noqa: F401
+    from app.schedule.notifier import CalendarNotification  # noqa: F401
 
     Base.metadata.create_all(engine)
 

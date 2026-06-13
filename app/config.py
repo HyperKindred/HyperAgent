@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # Timezone
     timezone: str = "Asia/Shanghai"
 
+    # Memory management — cap conversation history sent to the LLM.
+    # How many past messages to keep (not counting the system prompt).
+    # Set to 0 to disable trimming (keep everything forever).
+    max_history_messages: int = 40
+
     # Logging
     log_level: str = "INFO"
 

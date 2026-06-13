@@ -1,36 +1,22 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
 import { sendChat } from '../api/client'
+import { chatStore, initWelcomeMessage, clearChat } from '../store/chat'
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-}
-
-const messages = ref<Message[]>([])
 const input = ref('')
 const loading = ref(false)
 const chatContainer = ref<HTMLDivElement | null>(null)
 
 onMounted(() => {
-  messages.value.push({
-    role: 'assistant',
-    content: `你好！我是 HyperAgent，你的个人 AI 助手。我可以帮你管理日程：
-
-- 📅 **加日程**：加日程：明天下午3点开会
-- 🔍 **查日程**：今天有什么安排？
-- ✏️ **改日程**：把会议改到下午4点
-- ❌ **删日程**：删除 ID 为 1 的日程
-
-有什么我可以帮你的吗？`,
-  })
+  initWelcomeMessage()
+  scrollToBottom()
 })
 
 async function handleSend() {
   const text = input.value.trim()
   if (!text || loading.value) return
 
-  messages.value.push({ role: 'user', content: text })
+  chatStore.messages.push({ role: 'user', content: text })
   input.value = ''
   loading.value = true
 
@@ -39,9 +25,9 @@ async function handleSend() {
 
   try {
     const reply = await sendChat(text)
-    messages.value.push({ role: 'assistant', content: reply })
+    chatStore.messages.push({ role: 'assistant', content: reply })
   } catch (e: any) {
-    messages.value.push({
+    chatStore.messages.push({
       role: 'assistant',
       content: `❌ 请求失败：${e.message || '请确认后端服务是否已启动（uv run uvicorn app.main:app --port 8000）'}`,
     })
@@ -77,11 +63,14 @@ function renderMarkdown(text: string): string {
   <div class="chat-page">
     <div class="chat-header">
       <h2>💬 对话</h2>
+      <button class="btn-new-chat" @click="clearChat()" title="开启新对话（清空本地显示）">
+        ✨ 新对话
+      </button>
     </div>
 
     <div class="chat-messages" ref="chatContainer">
       <div
-        v-for="(msg, i) in messages"
+        v-for="(msg, i) in chatStore.messages"
         :key="i"
         class="message"
         :class="msg.role"
@@ -137,12 +126,32 @@ function renderMarkdown(text: string): string {
   padding: 20px 28px 16px;
   border-bottom: 1px solid #eef0f4;
   flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .chat-header h2 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+}
+
+.btn-new-chat {
+  padding: 6px 14px;
+  background: transparent;
+  color: #999;
+  border: 1px solid #e0e3e8;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-new-chat:hover {
+  background: #f0f1f5;
+  color: #6366f1;
+  border-color: #c7d2fe;
 }
 
 .chat-messages {

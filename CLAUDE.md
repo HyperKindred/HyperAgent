@@ -80,6 +80,14 @@ Vue Router 有两个视图：`/`（ChatView 对话页）和 `/calendar`（Calend
 
 `ScheduleRepository` 构造函数接受可选的 `Session` 参数。传入时（如 FastAPI 依赖注入或测试夹具）使用该会话；不传时自动从 `SessionLocal` 新建。测试通过 `conftest.py` 传入内存 SQLite 会话。
 
+### 对话记忆管理
+
+`app/agent/graph.py` 的 `_trim_if_needed()` 在每次 `run_agent()` 调用前自动裁剪历史。
+- 通过 `settings.max_history_messages` 控制（默认 40），设为 0 则不裁剪。
+- 实现方式：用 LangGraph 的 `RemoveMessage` 删除最旧消息，兼容 `add_messages` reducer。
+- 系统提示词不在 `messages` 列表中（由 `create_react_agent` 每次自动注入），不受裁剪影响。
+- 每轮对话增加 2 条（user + AI），峰值到 `max + 2` 条后下次裁回 `max`。
+
 ### 配置
 
 `app/config.py` 中的 `pydantic-settings` 从 `.env` 读取环境变量。默认模型 `deepseek-v4-flash`。单例 `settings` 实例被全后端引用。

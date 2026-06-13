@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import APIRouter, HTTPException
 
 from app.schedule.models import EventCreate, EventResponse, EventUpdate
+from app.schedule.notifier import notify_created, notify_deleted, notify_updated
 from app.schedule.repository import ScheduleRepository
 
 router = APIRouter(prefix="/events")
@@ -13,7 +14,6 @@ repo = ScheduleRepository()
 
 @router.get("")
 def list_events(q: str | None = None, dt: date | None = None):
-    """List events.  Optionally filter by date (?dt=2026-06-14) or keyword (?q=meeting)."""
     if q:
         events = repo.search_events(q)
     elif dt:
@@ -37,6 +37,7 @@ def get_event(event_id: int) -> EventResponse:
 @router.post("", status_code=201)
 def create_event(data: EventCreate) -> EventResponse:
     event = repo.create_event(data)
+    notify_created(event.title, event.id)
     return EventResponse.model_validate(event)
 
 
@@ -45,11 +46,15 @@ def update_event(event_id: int, data: EventUpdate) -> EventResponse:
     event = repo.update_event(event_id, data)
     if not event:
         raise HTTPException(404, "Event not found")
+    notify_updated(event.title, event.id)
     return EventResponse.model_validate(event)
 
 
 @router.delete("/{event_id}", status_code=204)
 def delete_event(event_id: int):
-    ok = repo.delete_event(event_id)
-    if not ok:
+    event = repo.get_event(event_id)
+    if not event:
         raise HTTPException(404, "Event not found")
+    title = event.title
+    repo.delete_event(event_id)
+    notify_deleted(title, event_id)
