@@ -1,0 +1,39 @@
+[project]
+name = "hyperagent"
+version = "0.1.0"
+description = "Personal AI assistant with schedule management"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "langchain>=0.3.25",
+    "langchain-openai>=0.3.0",
+    "langgraph>=0.4.8",
+    "langgraph-checkpoint-sqlite>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "dateparser>=1.2.0",
+    "pytz>=2024.0",
+    "sqlalchemy>=2.0.0",
+]
+
+[project.scripts]
+hyperagent = "main:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
