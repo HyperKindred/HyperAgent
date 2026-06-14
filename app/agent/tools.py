@@ -339,6 +339,23 @@ def forget_fact_tool(memory_id: int) -> str:
     return f"❌ 没有找到 ID 为 {memory_id} 的记忆。"
 
 
+
+@tool
+def clear_expired_events_tool() -> str:
+    """清除所有已过期的日程事件。Clear all expired schedule events.
+
+    当用户说"清除过期日程""清理过期事件""删除所有过期的日程""清一下日程"
+    等表达时使用。会删除所有已经结束的日程。
+
+    Returns:
+        清理结果确认字符串
+    """
+    count = repo.delete_expired_events()
+    if count == 0:
+        return "📭 没有过期的日程需要清理。"
+    return f"🗑️ 已清理 {count} 个过期日程。"
+
+
 # ── Tool Registry ────────────────────────────────────────────────────
 
 ALL_TOOLS = [
@@ -346,6 +363,7 @@ ALL_TOOLS = [
     list_events_tool,
     update_event_tool,
     delete_event_tool,
+    clear_expired_events_tool,
     search_events_tool,
     get_current_datetime_tool,
     remember_fact_tool,

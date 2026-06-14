@@ -63,6 +63,7 @@ def get_system_prompt(_state=None) -> str:
 ▸ 添加/安排日程 → create_event_tool
 ▸ 修改/改时间/推迟 → update_event_tool
 ▸ 删除/取消日程 → delete_event_tool
+▸ 清除过期日程 → clear_expired_events_tool
 ▸ 查时间日期 → get_current_datetime_tool
 ▸ 时间解析：用户可能用中文相对日期（今天、明天、后天、下周X等）
   结合上面的当前时间正确解析

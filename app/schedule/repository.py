@@ -94,6 +94,28 @@ class ScheduleRepository:
             db.commit()
             return True
 
+
+    def delete_expired_events(self) -> int:
+        """Delete all events whose end_time (or start_time) is in the past.
+        Returns the count of deleted events."""
+        with self._session() as db:
+            now = datetime.now()
+            expired = (
+                db.query(Event)
+                .filter(
+                    or_(
+                        Event.end_time < now,
+                        Event.end_time.is_(None) & (Event.start_time < now),
+                    )
+                )
+                .all()
+            )
+            count = len(expired)
+            for ev in expired:
+                db.delete(ev)
+            db.commit()
+            return count
+
     def search_events(self, keyword: str) -> list[Event]:
         """Search events by title or description containing *keyword*."""
         with self._session() as db:
