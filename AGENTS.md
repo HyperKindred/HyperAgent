@@ -33,13 +33,26 @@ uv run pytest && cd frontend && npx vue-tsc --noEmit && npm run build
 ### 数据流（聊天）
 
 ```
-用户输入（Vue / CLI）→ POST /api/chat → run_agent() → LangGraph agent
-                                                        ├── ChatOpenAI（DeepSeek V4 Flash）
-                                                        ├── 9 个 @tool 工具函数
-                                                        │   ├── 日程 CRUD（6 个）
-                                                        │   └── 记忆工具（3 个：记住/召回/删除）
-                                                        ├── RAG 记忆注入（系统提示词）
-                                                        └── SqliteSaver（checkpoints）
+用户输入 → ChatView.vue
+          │
+          ├─ POST /api/chat/stream（流式，默认）
+          │      → stream_agent()
+          │         → agent.astream_events(version="v2")
+          │            → on_chat_model_stream 事件
+          │               → 逐 token SSE data 事件
+          │                  → fetch + ReadableStream
+          │                     → chatStore 逐步追加
+          │
+          └─ POST /api/chat（非流式，后备）
+                 → run_agent() → agent.invoke()
+
+LangGraph agent 内部：
+├── ChatOpenAI（DeepSeek V4 Flash，streaming=True）
+├── 9 个 @tool 工具函数
+│   ├── 日程 CRUD（6 个）
+│   └── 记忆工具（3 个：记住/召回/删除）
+├── RAG 记忆注入（系统提示词）
+└── SqliteSaver（checkpoints）
 ```
 
 ### 数据流（日历视图）
@@ -144,3 +157,4 @@ Vue Router 有两个视图：`/`（ChatView 对话页）和 `/calendar`（Calend
 4. 在 `app/agent/prompts.py` 中描述新能力
 5. 可选：在 `app/api/<domain>.py` 中添加 REST 路由，在 `app/main.py` 中注册
 6. 在 `tests/` 中添加测试
+

@@ -1,6 +1,6 @@
 # 🤖 HyperAgent
 
-智能个人 AI 助手 —— 基于 LangGraph + DeepSeek V4 Flash，支持日程管理、RAG 语义记忆与自由对话。
+智能个人 AI 助手 —— 基于 LangGraph + DeepSeek V4 Flash，支持日程管理、RAG 语义记忆、**逐 token 流式对话**与自由对话。
 
 ## 技术栈
 
@@ -10,6 +10,7 @@
 | Agent | LangGraph (`create_react_agent`) |
 | 向量记忆 | SQLite + DeepSeek Embedding API（RAG 语义搜索） |
 | 对话记忆 | LangGraph SqliteSaver |
+| 流式传输 | Server-Sent Events（SSE），逐 token 推送 |
 | 后端 | FastAPI |
 | 前端 | Vue 3 + Vite + TypeScript |
 | 桌面 | Electron (计划中) |
@@ -50,6 +51,7 @@ uv run python main.py                     # CLI 模式
 
 ## 功能
 
+- 🎯 **流式对话** — 基于 SSE 的逐 token 响应，文字逐字出现，体验流畅
 - 📅 **日程管理** — 自然语言创建/查询/修改/删除日程（"明天下午3点开会"）
 - 🧠 **RAG 语义记忆** — 自动记住对话中分享的个人信息，语义搜索而非关键词匹配。记过"最近开始学吉他"，搜"最近在忙什么"也能找到。
 - 💬 **自由对话** — 闲聊、共情、给建议，不局限于日程操作
@@ -57,12 +59,30 @@ uv run python main.py                     # CLI 模式
 - 🔍 **日历视图** — 前端日历页面，支持日程增删改查
 - 🗂️ **笔记与待办** — 计划中
 
+## 数据流
+
+```
+用户输入 → Vue ChatView
+          │
+          ├─ POST /api/chat/stream ← 流式 SSE
+          │      → stream_agent()
+          │         → agent.astream_events(version="v2")
+          │            → on_chat_model_stream 事件
+          │               → 逐 token 推送 SSE
+          │                  → fetch + ReadableStream
+          │                     → chatStore.messages 逐步追加
+          │                        → Vue 响应式更新 DOM
+          │
+          └─ POST /api/chat ← 非流式（后备）
+                 → run_agent() → agent.invoke()
+```
+
 ## 项目结构
 
 ```
 app/
 ├── agent/          # LangGraph agent + 9 个工具 + 系统提示词
-│   ├── graph.py    # Agent 构建与调用
+│   ├── graph.py    # Agent 构建、流式与非流式调用
 │   ├── tools.py    # 9 个 @tool 工具函数（日程6 + 记忆3）
 │   └── prompts.py  # 系统提示词（含时间/记忆注入）
 ├── memory/         # RAG 个人记忆系统
@@ -75,9 +95,15 @@ app/
 │   ├── repository.py  # CRUD 仓库
 │   └── notifier.py    # 日历操作通知
 ├── api/            # REST 接口
-│   ├── chat.py     # POST /api/chat
+│   ├── chat.py     # POST /api/chat（非流式）+ /api/chat/stream（SSE 流式）
 │   └── schedule.py # CRUD /api/events
 └── main.py         # FastAPI 入口
+frontend/
+├── src/
+│   ├── api/client.ts          # sendChatStream() — fetch + ReadableStream 消费 SSE
+│   ├── views/ChatView.vue     # 流式对话界面，逐 token 追加显示
+│   └── store/chat.ts          # 响应式消息状态
+└── ...
 ```
 
 ## 测试
