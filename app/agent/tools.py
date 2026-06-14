@@ -89,7 +89,7 @@ def create_event_tool(
     """
     parsed_start = _parse_time(start_time)
     if parsed_start is None:
-        return f"❌ 无法解析开始时间：{start_time}。请提供具体时间，如'明天下午3点'或'2026-06-14 15:00'。"
+        raise ValueError(f"无法解析开始时间：{start_time}。请提供具体时间，如‘明天下午3点’或‘2026-06-14 15:00’。")：{start_time}。请提供具体时间，如'明天下午3点'或'2026-06-14 15:00'。"
 
     parsed_end = None
     if end_time:
@@ -169,7 +169,7 @@ def update_event_tool(event_id: int, **kwargs) -> str:
         if time_field in kwargs and isinstance(kwargs[time_field], str):
             parsed = _parse_time(kwargs[time_field])
             if parsed is None:
-                return f"❌ 无法解析时间：{kwargs[time_field]}"
+                raise ValueError(f"无法解析时间：{kwargs[time_field]}。请提供具体时间，如‘明天下午3点’或‘2026-06-14 15:00’。")
             kwargs[time_field] = parsed
 
     update_data = EventUpdate(**kwargs)

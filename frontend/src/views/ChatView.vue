@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
+import { marked } from 'marked'
 import { sendChatStream } from '../api/client'
 import { chatStore, initWelcomeMessage, clearChat } from '../store/chat'
 
@@ -61,9 +62,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 /** Simple markdown-like rendering */
 function renderMarkdown(text: string): string {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>')
+  return marked.parse(text, { breaks: true })
 }
 </script>
 
@@ -260,5 +259,37 @@ function renderMarkdown(text: string): string {
   opacity: 0.5;
   cursor: not-allowed;
 }
+</style>
+
+<style>
+.message-content code {
+  background: #f0f0f3;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.9em;
+}
+.message-content pre {
+  background: #f4f5f9;
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.message-content pre code { background: none; padding: 0; }
+.message-content blockquote {
+  border-left: 3px solid #6366f1;
+  margin: 8px 0;
+  padding: 4px 12px;
+  color: #666;
+}
+.message-content ul, .message-content ol { padding-left: 20px; margin: 6px 0; }
+.message-content a { color: #6366f1; text-decoration: none; }
+.message-content a:hover { text-decoration: underline; }
+.message-content table { border-collapse: collapse; margin: 8px 0; font-size: 0.9em; }
+.message-content th, .message-content td { border: 1px solid #ddd; padding: 6px 10px; }
+.message-content th { background: #f0f1f5; font-weight: 600; }
+.message-content p { margin: 4px 0; }
+.message-content strong { font-weight: 600; }
 </style>
 
