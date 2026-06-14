@@ -35,8 +35,8 @@ def sample_event(repo):
         EventCreate(
             title="测试会议",
             description="项目进度讨论",
-            start_time=datetime(2026, 6, 14, 10, 0),
-            end_time=datetime(2026, 6, 14, 11, 0),
+            start_time=datetime(2029, 6, 14, 10, 0),
+            end_time=datetime(2029, 6, 14, 11, 0),
             priority="high",
         )
     )

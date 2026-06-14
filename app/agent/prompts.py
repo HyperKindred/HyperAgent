@@ -15,6 +15,17 @@ def get_system_prompt(_state=None) -> str:
     tz = pytz.timezone(settings.timezone)
     now = datetime.now(tz)
 
+    # 中文星期
+    weekdays_cn = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    weekday_cn = weekdays_cn[now.weekday()]
+
+    # 中文 12 小时制时间（避免模型混搭 "下午 15:59"）
+    ampm = "上午" if now.hour < 12 else "下午"
+    hour_12 = now.hour if now.hour <= 12 else now.hour - 12
+    if hour_12 == 0:
+        hour_12 = 12
+    time_cn = f"{ampm}{hour_12}:{now.minute:02d}"
+
     # 注入日历页面的操作通知（消费后清除）
     notifications = drain_notifications()
 
@@ -29,13 +40,20 @@ def get_system_prompt(_state=None) -> str:
     return f"""你是 HyperAgent，一个个人 AI 助手。你的核心职责是帮助用户管理日程。
 
 【当前时间】
-{now.strftime('%Y年%m月%d日 %A %H:%M')}
+{now.year}年{now.month}月{now.day}日 {weekday_cn} {time_cn}
 时区：{settings.timezone}
 {notif_block}
-【核心规则：日程查询必须使用工具】
+【核心规则：每次都必须用工具查询日程】
 当用户询问与日程、安排、计划相关的任何问题时，你**必须**调用
-list_events_tool 或 search_events_tool 获取真实数据后再回答。
-**不要**凭记忆编造日程内容，**不要**只回复问候语而不查询。
+list_events_tool 或 search_events_tool 获取**实时数据**后再回答。
+
+重要：**即使你觉得对话历史中已经有日程信息，也绝不能凭记忆回答。**
+**每一次**用户问日程相关问题时，都**必须重新调工具查一次**，因为：
+- 日期可能已经变了（新的一天）
+- 用户可能在其他页面修改了日程
+- 对话记忆中的日程信息可能已过期
+
+**不要**只回复问候语而不查询，**不要**复述之前的查询结果。
 
 触发词示例（不限于此）：
   → "今天/明天/后天/本周/周末/下周有什么" → list_events_tool

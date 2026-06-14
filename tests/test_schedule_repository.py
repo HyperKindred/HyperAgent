@@ -10,7 +10,7 @@ class TestCreateEvent:
         event = repo.create_event(
             EventCreate(
                 title="部门周会",
-                start_time=datetime(2026, 6, 14, 9, 0),
+                start_time=datetime(2029, 6, 14, 9, 0),
             )
         )
         assert event.id is not None
@@ -23,8 +23,8 @@ class TestCreateEvent:
             EventCreate(
                 title="完整事件",
                 description="带描述的完整事件",
-                start_time=datetime(2026, 6, 14, 14, 0),
-                end_time=datetime(2026, 6, 14, 15, 0),
+                start_time=datetime(2029, 6, 14, 14, 0),
+                end_time=datetime(2029, 6, 14, 15, 0),
                 status="pending",
                 priority="high",
                 category="工作会议",
@@ -47,7 +47,7 @@ class TestGetEvent:
 
 class TestListEventsByDate:
     def test_list_on_date_with_events(self, repo, sample_event):
-        events = repo.list_events_by_date(date(2026, 6, 14))
+        events = repo.list_events_by_date(date(2029, 6, 14))
         assert len(events) == 1
         assert events[0].title == "测试会议"
 
@@ -58,15 +58,15 @@ class TestListEventsByDate:
     def test_list_multiple_events_same_day(self, repo):
         repo.create_event(
             EventCreate(
-                title="事件A", start_time=datetime(2026, 6, 14, 9, 0)
+                title="事件A", start_time=datetime(2029, 6, 14, 9, 0)
             )
         )
         repo.create_event(
             EventCreate(
-                title="事件B", start_time=datetime(2026, 6, 14, 10, 0)
+                title="事件B", start_time=datetime(2029, 6, 14, 10, 0)
             )
         )
-        events = repo.list_events_by_date(date(2026, 6, 14))
+        events = repo.list_events_by_date(date(2029, 6, 14))
         assert len(events) == 2
 
 
@@ -79,7 +79,7 @@ class TestUpdateEvent:
         assert updated.title == "更新后的标题"
 
     def test_update_start_time(self, repo, sample_event):
-        new_time = datetime(2026, 6, 14, 15, 0)
+        new_time = datetime(2029, 6, 14, 15, 0)
         updated = repo.update_event(
             sample_event.id, EventUpdate(start_time=new_time)
         )
