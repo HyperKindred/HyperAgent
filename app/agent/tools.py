@@ -13,6 +13,7 @@ from app.memory.models import MemoryCreate
 from app.memory.repository import MemoryRepository
 from app.schedule.models import EventCreate, EventUpdate
 from app.schedule.repository import ScheduleRepository
+from app.web_search.searcher import search_web
 
 repo = ScheduleRepository()
 memory_repo = MemoryRepository()
@@ -356,6 +357,24 @@ def clear_expired_events_tool() -> str:
     return f"🗑️ 已清理 {count} 个过期日程。"
 
 
+
+@tool
+def web_search_tool(query: str) -> str:
+    """搜索互联网获取最新信息。Search the web for current information.
+
+    当用户询问实时信息、最新消息、你不知道的事情，或者需要联网搜索
+    才能回答的问题时使用。支持中文和英文搜索。
+
+    用法："查一下今天的新闻""搜索XX事件""帮我了解一下XX"
+    会返回搜索结果摘要，并自动抓取第一个结果的详细内容。
+
+    Args:
+        query: 搜索关键词或问题
+
+    Returns:
+        搜索结果字符串（含标题、摘要、链接和内容摘要）
+    """
+    return search_web(query, max_results=5, fetch_content=True, max_content_chars=2000)
 # ── Tool Registry ────────────────────────────────────────────────────
 
 ALL_TOOLS = [
@@ -364,9 +383,11 @@ ALL_TOOLS = [
     update_event_tool,
     delete_event_tool,
     clear_expired_events_tool,
+    web_search_tool,
     search_events_tool,
     get_current_datetime_tool,
     remember_fact_tool,
     recall_facts_tool,
     forget_fact_tool,
 ]
+
