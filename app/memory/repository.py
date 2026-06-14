@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from typing import Optional
 
 from sqlalchemy import or_
@@ -25,34 +26,46 @@ class MemoryRepository:
     def __init__(self, session: Session | None = None):
         self.session = session
 
-    # ── internal helpers ────────────────────────────────────────────
+    # ── session helper ─────────────────────────────────────────────
 
-    def _s(self) -> Session:
+    @contextmanager
+    def _session(self):
+        """Provide a transactional scope.  When a session was injected (e.g.
+        by a test fixture) yield it directly; otherwise create, commit on
+        success, rollback on error, and always close."""
         if self.session is not None:
-            return self.session
-        from app.schedule.database import SessionLocal
+            yield self.session
+        else:
+            from app.schedule.database import SessionLocal
 
-        return SessionLocal()
+            db = SessionLocal()
+            try:
+                yield db
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
 
     # ── create ──────────────────────────────────────────────────────
 
     def create_memory(self, data: MemoryCreate) -> Memory:
         """Insert a new memory, automatically generating its embedding."""
-        db = self._s()
-        entry = Memory(**data.model_dump())
-        # Generate embedding via DeepSeek API
-        try:
-            embedding = get_embedding(data.content)
-            entry.embedding = json.dumps(embedding)
-        except Exception as exc:
-            logger.warning("Embedding API failed for '%s…': %s", data.content[:40], exc)
-            entry.embedding = None  # gracefully degrade
-        db.add(entry)
-        db.commit()
-        db.refresh(entry)
-        if self.session is None:
-            db.close()
-        return entry
+        with self._session() as db:
+            entry = Memory(**data.model_dump())
+            # Generate embedding via DeepSeek API
+            try:
+                embedding = get_embedding(data.content)
+                entry.embedding = json.dumps(embedding)
+            except Exception as exc:
+                logger.warning(
+                    "Embedding API failed for '%s…': %s", data.content[:40], exc
+                )
+                entry.embedding = None  # gracefully degrade
+            db.add(entry)
+            db.commit()
+            db.refresh(entry)
+            return entry
 
     # ── semantic search ─────────────────────────────────────────────
 
@@ -93,50 +106,34 @@ class MemoryRepository:
     def _text_fallback(
         self, query: str, category: str | None = None
     ) -> list[Memory]:
-        db = self._s()
-        pattern = f"%{query}%"
-        q = db.query(Memory).filter(Memory.content.ilike(pattern))
-        if category:
-            q = q.filter(Memory.category == category)
-        results: list[Memory] = q.order_by(Memory.updated_at.desc()).all()
-        if self.session is None:
-            db.close()
-        return results
+        with self._session() as db:
+            pattern = f"%{query}%"
+            q = db.query(Memory).filter(Memory.content.ilike(pattern))
+            if category:
+                q = q.filter(Memory.category == category)
+            return q.order_by(Memory.updated_at.desc()).all()
 
     # ── list / get ──────────────────────────────────────────────────
 
     def list_by_category(self, category: str) -> list[Memory]:
         """All memories in a given category."""
-        db = self._s()
-        results: list[Memory] = (
-            db.query(Memory)
-            .filter(Memory.category == category)
-            .order_by(Memory.created_at.desc())
-            .all()
-        )
-        if self.session is None:
-            db.close()
-        return results
+        with self._session() as db:
+            return (
+                db.query(Memory)
+                .filter(Memory.category == category)
+                .order_by(Memory.created_at.desc())
+                .all()
+            )
 
     def get_all_memories(self) -> list[Memory]:
         """Every stored memory, newest first."""
-        db = self._s()
-        results: list[Memory] = (
-            db.query(Memory).order_by(Memory.created_at.desc()).all()
-        )
-        if self.session is None:
-            db.close()
-        return results
+        with self._session() as db:
+            return db.query(Memory).order_by(Memory.created_at.desc()).all()
 
     def get_memory(self, memory_id: int) -> Memory | None:
         """Fetch a single memory by id."""
-        db = self._s()
-        mem: Memory | None = (
-            db.query(Memory).filter(Memory.id == memory_id).first()
-        )
-        if self.session is None:
-            db.close()
-        return mem
+        with self._session() as db:
+            return db.query(Memory).filter(Memory.id == memory_id).first()
 
     # ── internals ───────────────────────────────────────────────────
 
@@ -144,29 +141,20 @@ class MemoryRepository:
         self, category: str | None = None
     ) -> list[Memory]:
         """All memories that have a non-null embedding."""
-        db = self._s()
-        q = db.query(Memory).filter(Memory.embedding.isnot(None))
-        if category:
-            q = q.filter(Memory.category == category)
-        results: list[Memory] = q.all()
-        if self.session is None:
-            db.close()
-        return results
+        with self._session() as db:
+            q = db.query(Memory).filter(Memory.embedding.isnot(None))
+            if category:
+                q = q.filter(Memory.category == category)
+            return q.all()
 
     # ── delete ──────────────────────────────────────────────────────
 
     def delete_memory(self, memory_id: int) -> bool:
         """Delete a memory by its id. Returns ``True`` if deleted."""
-        db = self._s()
-        mem: Memory | None = (
-            db.query(Memory).filter(Memory.id == memory_id).first()
-        )
-        if mem is None:
-            if self.session is None:
-                db.close()
-            return False
-        db.delete(mem)
-        db.commit()
-        if self.session is None:
-            db.close()
-        return True
+        with self._session() as db:
+            mem = db.query(Memory).filter(Memory.id == memory_id).first()
+            if mem is None:
+                return False
+            db.delete(mem)
+            db.commit()
+            return True

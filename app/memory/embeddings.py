@@ -7,6 +7,7 @@ search instead of keyword matching.
 from __future__ import annotations
 
 import json
+import time
 from typing import TYPE_CHECKING
 
 import requests
@@ -17,28 +18,52 @@ if TYPE_CHECKING:
     from app.memory.models import Memory
 
 
+# ── shared session ──────────────────────────────────────────────────
+
+_session: requests.Session | None = None
+
+
+def _get_session() -> requests.Session:
+    global _session
+    if _session is None:
+        _session = requests.Session()
+    return _session
+
+
 # ── API call ─────────────────────────────────────────────────────────
 
 
-def get_embedding(text: str) -> list[float]:
+def get_embedding(
+    text: str,
+    max_retries: int = 3,
+    timeout: int = 30,
+) -> list[float]:
     """Generate an embedding vector via the DeepSeek Embedding API.
 
-    Uses the OpenAI-compatible ``/v1/embeddings`` endpoint so no extra
-    SDKs or dependencies are needed.
-
-    Raises ``requests.RequestException`` on API failure.
+    Uses the OpenAI-compatible ``/v1/embeddings`` endpoint with
+    exponential-backoff retry on transient failures.
     """
-    resp = requests.post(
-        f"{settings.deepseek_base_url}/embeddings",
-        headers={
-            "Authorization": f"Bearer {settings.deepseek_api_key}",
-            "Content-Type": "application/json",
-        },
-        json={"model": "deepseek-embedding", "input": text},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["data"][0]["embedding"]
+    session = _get_session()
+
+    for attempt in range(max_retries):
+        try:
+            resp = session.post(
+                f"{settings.deepseek_base_url}/embeddings",
+                headers={
+                    "Authorization": f"Bearer {settings.deepseek_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={"model": "deepseek-embedding", "input": text},
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            return resp.json()["data"][0]["embedding"]
+        except requests.RequestException:
+            if attempt == max_retries - 1:
+                raise  # last attempt — propagate the error
+            time.sleep(2**attempt)  # exponential backoff: 1s, 2s, 4s…
+
+    raise RuntimeError("unreachable")
 
 
 # ── similarity ───────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
-import { sendChat } from '../api/client'
+import { sendChatStream } from '../api/client'
 import { chatStore, initWelcomeMessage, clearChat } from '../store/chat'
 
 const input = ref('')
@@ -23,14 +23,22 @@ async function handleSend() {
   await nextTick()
   scrollToBottom()
 
+  // pre-fill empty assistant message, append tokens one by one
+  const msgIndex = chatStore.messages.length
+  chatStore.messages.push({ role: 'assistant', content: '' })
+
+  await nextTick()
+  scrollToBottom()
+
   try {
-    const reply = await sendChat(text)
-    chatStore.messages.push({ role: 'assistant', content: reply })
+    for await (const token of sendChatStream(text, chatStore.threadId)) {
+      chatStore.messages[msgIndex].content += token
+      await nextTick()
+      scrollToBottom()
+    }
   } catch (e: any) {
-    chatStore.messages.push({
-      role: 'assistant',
-      content: `❌ 请求失败：${e.message || '请确认后端服务是否已启动（uv run uvicorn app.main:app --port 8000）'}`,
-    })
+    chatStore.messages[msgIndex].content =
+      '❌ 请求失败：' + (e.message || '请确认后端服务是否已启动')
   } finally {
     loading.value = false
     await nextTick()
@@ -83,14 +91,6 @@ function renderMarkdown(text: string): string {
         </div>
       </div>
 
-      <div v-if="loading" class="message assistant">
-        <div class="message-avatar">🤖</div>
-        <div class="message-body">
-          <div class="typing-indicator">
-            <span></span><span></span><span></span>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div class="chat-input-area">
@@ -211,30 +211,8 @@ function renderMarkdown(text: string): string {
   border-bottom-right-radius: 4px;
 }
 
-.typing-indicator {
-  display: flex;
-  gap: 4px;
-  padding: 12px 16px;
-  background: #f4f5f9;
-  border-radius: 12px;
-  border-bottom-left-radius: 4px;
-}
 
-.typing-indicator span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ccc;
-  animation: typing 1.4s infinite both;
-}
 
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typing {
-  0%, 60%, 100% { transform: translateY(0); }
-  30% { transform: translateY(-6px); }
-}
 
 .chat-input-area {
   padding: 16px 28px 24px;
@@ -283,3 +261,4 @@ function renderMarkdown(text: string): string {
   cursor: not-allowed;
 }
 </style>
+

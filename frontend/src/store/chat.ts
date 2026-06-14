@@ -1,4 +1,5 @@
 import { reactive, watch } from 'vue'
+import { createThread } from '../api/client'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -16,7 +17,7 @@ const MAX_STORED = 100  // 最多持久化 100 条，避免 localStorage 过大
 /** 共享的对话状态 —— 页面切换不丢失，刷新后自动恢复最近消息 */
 export const chatStore = reactive<ChatStore>({
   messages: loadMessages(),
-  threadId: 'hyperagent-main',
+  threadId: loadThreadId(),
 })
 
 // 每次消息变化自动保存到 localStorage
@@ -69,8 +70,29 @@ function saveMessages(msgs: Message[]) {
 }
 
 /** 清空前端显示 + localStorage（线程级别的 /new 操作） */
-export function clearChat() {
+export async function clearChat() {
+  try {
+    const newId = await createThread()
+    chatStore.threadId = newId
+    localStorage.setItem(THREAD_STORAGE_KEY, newId)
+  } catch {
+    // API 不可用时回退到本地时间戳（仍然创建新 ID）
+    chatStore.threadId = `hyperagent-${Date.now().toString(36)}`
+  }
   chatStore.messages.splice(0)
   try { localStorage.removeItem(STORAGE_KEY) } catch {}
   _initialized = false
+}
+
+
+// ── thread_id localStorage helpers ──────────────────────────────────
+
+const THREAD_STORAGE_KEY = 'hyperagent-thread'
+
+function loadThreadId(): string {
+  try {
+    return localStorage.getItem(THREAD_STORAGE_KEY) || 'hyperagent-main'
+  } catch {
+    return 'hyperagent-main'
+  }
 }
