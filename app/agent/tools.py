@@ -9,10 +9,13 @@ import pytz
 from langchain_core.tools import tool
 
 from app.config import settings
+from app.memory.models import MemoryCreate
+from app.memory.repository import MemoryRepository
 from app.schedule.models import EventCreate, EventUpdate
 from app.schedule.repository import ScheduleRepository
 
 repo = ScheduleRepository()
+memory_repo = MemoryRepository()
 tz = pytz.timezone(settings.timezone)
 
 
@@ -226,6 +229,91 @@ def get_current_datetime_tool() -> str:
     return now.strftime("%Y-%m-%d %H:%M:%S %A")
 
 
+# ── Memory Tools ───────────────────────────────────────────────────────
+
+
+@tool
+def remember_fact_tool(key: str, value: str, category: str = "general") -> str:
+    """记住关于用户的个人信息。Remember a personal fact about the user.
+
+    当用户分享个人信息、偏好、目标或任何你想记住的信息时**必须**使用此工具。
+    例如用户说"我叫小明""我住在北京""我喜欢编程""我想今年学会游泳"等。
+    分类说明：personal_info（姓名/职业/住址等个人信息）、preference（喜好/习惯）、
+    goal（目标/计划）、note（一般笔记）、general（其他）。
+
+    Args:
+        key: 信息关键词（英文或拼音），如 "user_name" "work_company" "preference_coffee" "goal_2026"
+        value: 信息内容（可以使用中文）
+        category: 分类：personal_info, preference, goal, note, general（默认 general）
+
+    Returns:
+        记忆存储确认
+    """
+    entry = memory_repo.create_memory(
+        MemoryCreate(key=key, value=value, category=category, source="chat")
+    )
+    cat_labels = {
+        "personal_info": "个人信息",
+        "preference": "偏好",
+        "goal": "目标",
+        "note": "笔记",
+        "general": "其他",
+    }
+    label = cat_labels.get(category, category)
+    return f"🧠 已记住（{label}）：{entry.key} = {entry.value}"
+
+
+@tool
+def recall_facts_tool(query: str, category: str | None = None) -> str:
+    """回忆关于用户的个人信息。Recall personal facts about the user.
+
+    当需要根据用户个人背景提供建议或回答问题时使用。
+    例如用户问"你还记得我喜欢什么吗""根据我的情况帮我分析""你觉得我应该..."
+    此工具会根据关键词搜索记忆，不仅限于精确匹配。
+
+    Args:
+        query: 搜索关键词，如"喜欢""工作""目标""2026"
+        category: 可选分类过滤：personal_info, preference, goal, note, general
+
+    Returns:
+        匹配的记忆列表
+    """
+    results = memory_repo.search_memories(query, category=category)
+    if not results:
+        return f"🔍 没有找到关于「{query}」的记忆。"
+
+    cat_labels = {
+        "personal_info": "个人信息",
+        "preference": "偏好",
+        "goal": "目标",
+        "note": "笔记",
+        "general": "其他",
+    }
+    lines = [f"🔍 找到 {len(results)} 条关于「{query}」的记忆："]
+    for i, m in enumerate(results, 1):
+        label = cat_labels.get(m.category, m.category)
+        lines.append(f"  {i}. [{label}] {m.key} = {m.value}")
+    return "\n".join(lines)
+
+
+@tool
+def forget_fact_tool(key: str) -> str:
+    """删除关于用户的个人信息。Forget/delete a personal fact.
+
+    当用户表示某条记忆不再准确或要求删除时使用。
+
+    Args:
+        key: 要删除的信息关键词（remember_fact_tool 中使用的 key）
+
+    Returns:
+        删除确认
+    """
+    success = memory_repo.delete_memory_by_key(key)
+    if success:
+        return f"🗑️ 已删除关于「{key}」的记忆。"
+    return f"❌ 没有找到关于「{key}」的记忆。"
+
+
 # ── Tool Registry ────────────────────────────────────────────────────
 
 ALL_TOOLS = [
@@ -235,4 +323,7 @@ ALL_TOOLS = [
     delete_event_tool,
     search_events_tool,
     get_current_datetime_tool,
+    remember_fact_tool,
+    recall_facts_tool,
+    forget_fact_tool,
 ]

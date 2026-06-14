@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.memory.models import MemoryCreate
+from app.memory.repository import MemoryRepository
 from app.schedule.database import Base
 from app.schedule.models import EventCreate
 from app.schedule.repository import ScheduleRepository
@@ -40,3 +42,9 @@ def sample_event(repo):
             priority="high",
         )
     )
+
+
+@pytest.fixture
+def memory_repo(session):
+    """MemoryRepository backed by in-memory SQLite."""
+    return MemoryRepository(session=session)
