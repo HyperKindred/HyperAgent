@@ -11,9 +11,15 @@ class Settings(BaseSettings):
     )
 
     # DeepSeek / LLM
+    # DeepSeek API — used for embeddings (kept separate)
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"
+
+    # One API / OpenRouter — unified LLM gateway, OpenAI-compatible
+    llm_base_url: str = "https://api.deepseek.com/v1"
+    llm_api_key: str = ""
+    llm_model: str = "deepseek-chat"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
 
@@ -35,3 +41,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

@@ -15,6 +15,7 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     thread_id: str = "hyperagent-main"
+    model: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -28,7 +29,7 @@ class ThreadResponse(BaseModel):
 @router.post("/chat")
 def chat(request: ChatRequest) -> ChatResponse:
     """Send a message to a specific agent thread and get a reply."""
-    reply = run_agent(request.message, thread_id=request.thread_id)
+    reply = run_agent(request.message, thread_id=request.thread_id, model=request.model)
     return ChatResponse(reply=reply)
 
 
@@ -42,7 +43,7 @@ async def chat_stream(request: ChatRequest):
     - ``{"type": "done"}`` — the agent has finished
     """
     return StreamingResponse(
-        stream_agent(request.message, thread_id=request.thread_id),
+        stream_agent(request.message, thread_id=request.thread_id, model=request.model),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -56,3 +57,5 @@ def new_thread() -> ThreadResponse:
     """Create a new conversation thread and return its ID."""
     thread_id = f"hyperagent-{uuid.uuid4().hex[:8]}"
     return ThreadResponse(thread_id=thread_id)
+
+
