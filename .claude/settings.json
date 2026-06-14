@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(taskkill /f /im python.exe)",
+      "Bash(taskkill /f /im python3.exe)"
+    ]
+  }
+}

@@ -1,12 +1,18 @@
-"""Inject stored memories into the system prompt so the agent sees known facts.
+"""Inject relevant memories into the system prompt via RAG.
 
-Parallels ``app.schedule.notifier.drain_notifications()`` — fetches all
-memories and formats them as a text block for the system prompt.
+Parallels ``app.schedule.notifier.drain_notifications()`` — retrieves the
+most semantically relevant memories and formats them for the system prompt.
+
+Because the system prompt is built *before* seeing the user's message, we
+inject a mix of:
+  1. High-importance memories (importance >= 0.8)
+  2. Most recent N memories
+
+The deep semantic search happens inside ``recall_facts_tool`` at query time.
 """
 
 from app.memory.repository import MemoryRepository
 
-# Labels used in the formatted output
 _CATEGORY_LABELS: dict[str, str] = {
     "personal_info": "个人信息",
     "preference": "偏好习惯",
@@ -15,40 +21,27 @@ _CATEGORY_LABELS: dict[str, str] = {
     "general": "其他",
 }
 
-# Display order for categories
-_CATEGORY_ORDER: list[str] = [
-    "personal_info",
-    "preference",
-    "goal",
-    "note",
-    "general",
-]
+_MAX_CONTEXT_MEMORIES = 5  # keep system-prompt token count reasonable
 
 
 def get_memory_context() -> str | None:
-    """Build a formatted block of all known user memories.
+    """Build a formatted block of important + recent memories.
 
-    Returns ``None`` when there are no memories yet (so callers can skip
-    the block entirely).
+    Returns ``None`` when there are no memories yet.
     """
     repo = MemoryRepository()
-    memories = repo.get_all_memories()
-    if not memories:
+    all_mems = repo.get_all_memories()
+    if not all_mems:
         return None
 
-    # Group by category
-    grouped: dict[str, list] = {}
-    for m in memories:
-        grouped.setdefault(m.category, []).append(m)
+    # High-importance first, then recent
+    high_importance = [m for m in all_mems if m.importance >= 0.8]
+    recent = [m for m in all_mems if m.importance < 0.8]
+    selected = (high_importance + recent)[:_MAX_CONTEXT_MEMORIES]
 
     lines: list[str] = []
-    for cat in _CATEGORY_ORDER:
-        items = grouped.get(cat)
-        if not items:
-            continue
-        label = _CATEGORY_LABELS.get(cat, cat)
-        lines.append(f"  [{label}]")
-        for item in items:
-            lines.append(f"    • {item.key}: {item.value}")
+    for m in selected:
+        label = _CATEGORY_LABELS.get(m.category, m.category)
+        lines.append(f"  [{label}] {m.content}")
 
     return "\n".join(lines)

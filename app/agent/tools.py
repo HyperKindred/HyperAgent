@@ -233,24 +233,36 @@ def get_current_datetime_tool() -> str:
 
 
 @tool
-def remember_fact_tool(key: str, value: str, category: str = "general") -> str:
-    """记住关于用户的个人信息。Remember a personal fact about the user.
+def remember_fact_tool(
+    content: str, category: str = "general", importance: float = 0.5
+) -> str:
+    """记住重要信息。Save an important memory about the user.
 
-    当用户分享个人信息、偏好、目标或任何你想记住的信息时**必须**使用此工具。
-    例如用户说"我叫小明""我住在北京""我喜欢编程""我想今年学会游泳"等。
-    分类说明：personal_info（姓名/职业/住址等个人信息）、preference（喜好/习惯）、
-    goal（目标/计划）、note（一般笔记）、general（其他）。
+    **必须**在以下场景主动使用：
+    - 用户分享个人信息时（"我叫XX""我在XX工作""我住在XX"）
+    - 用户表达偏好时（"我喜欢XX""我爱吃XX"）
+    - 用户提到目标时（"我想今年XX""我的目标是XX"）
+    - 用户说"记住""记一下"时
+    - 任何你觉得值得记住的对话内容
+
+    内容请用完整的自然语言描述，不要简化为关键词。
+    例如记录"用户最近开始学吉他，已经报班上课一周了"而不是"吉他"。
+
+    分类说明：personal_info（个人信息）、preference（偏好习惯）、
+    goal（目标计划）、note（笔记）、general（其他）。
 
     Args:
-        key: 信息关键词（英文或拼音），如 "user_name" "work_company" "preference_coffee" "goal_2026"
-        value: 信息内容（可以使用中文）
+        content: 要记住的完整内容（用自然语言描述，如"用户叫张三，在北京做程序员，喜欢喝美式咖啡"）
         category: 分类：personal_info, preference, goal, note, general（默认 general）
+        importance: 重要性 0.0~1.0，越重要的记忆越容易被优先回顾（默认 0.5）
 
     Returns:
         记忆存储确认
     """
     entry = memory_repo.create_memory(
-        MemoryCreate(key=key, value=value, category=category, source="chat")
+        MemoryCreate(
+            content=content, category=category, importance=importance, source="chat"
+        )
     )
     cat_labels = {
         "personal_info": "个人信息",
@@ -260,27 +272,29 @@ def remember_fact_tool(key: str, value: str, category: str = "general") -> str:
         "general": "其他",
     }
     label = cat_labels.get(category, category)
-    return f"🧠 已记住（{label}）：{entry.key} = {entry.value}"
+    badge = "⭐" if importance >= 0.8 else "🧠"
+    return f"{badge} 已记住（{label}）：「{entry.content[:80]}」"
 
 
 @tool
 def recall_facts_tool(query: str, category: str | None = None) -> str:
     """回忆关于用户的个人信息。Recall personal facts about the user.
 
-    当需要根据用户个人背景提供建议或回答问题时使用。
-    例如用户问"你还记得我喜欢什么吗""根据我的情况帮我分析""你觉得我应该..."
-    此工具会根据关键词搜索记忆，不仅限于精确匹配。
+    使用语义搜索（而非关键词匹配），可以根据意思找到相关记忆。
+    当需要根据用户个人背景提供建议、分析问题或回答个人问题时使用。
+
+    建议：在给出个性化建议前先用此工具了解用户背景。
 
     Args:
-        query: 搜索关键词，如"喜欢""工作""目标""2026"
+        query: 搜索关键词或句子，如"用户喜欢什么""工作相关""目标计划"
         category: 可选分类过滤：personal_info, preference, goal, note, general
 
     Returns:
-        匹配的记忆列表
+        匹配的记忆列表（按语义相关性排序）
     """
-    results = memory_repo.search_memories(query, category=category)
+    results = memory_repo.search_similar(query, top_k=5, category=category)
     if not results:
-        return f"🔍 没有找到关于「{query}」的记忆。"
+        return f"🔍 没有找到与「{query}」相关的记忆。"
 
     cat_labels = {
         "personal_info": "个人信息",
@@ -289,29 +303,30 @@ def recall_facts_tool(query: str, category: str | None = None) -> str:
         "note": "笔记",
         "general": "其他",
     }
-    lines = [f"🔍 找到 {len(results)} 条关于「{query}」的记忆："]
+    lines = [f"🔍 找到 {len(results)} 条相关记忆："]
     for i, m in enumerate(results, 1):
         label = cat_labels.get(m.category, m.category)
-        lines.append(f"  {i}. [{label}] {m.key} = {m.value}")
+        star = " ⭐" if m.importance >= 0.8 else ""
+        lines.append(f"  {i}. [{label}{star}] {m.content[:100]}")
     return "\n".join(lines)
 
 
 @tool
-def forget_fact_tool(key: str) -> str:
-    """删除关于用户的个人信息。Forget/delete a personal fact.
+def forget_fact_tool(memory_id: int) -> str:
+    """删除某条记忆。Delete a memory by its ID.
 
-    当用户表示某条记忆不再准确或要求删除时使用。
+    当用户要求删除某条记忆时使用。ID 可以从 recall_facts_tool 的结果中看到。
 
     Args:
-        key: 要删除的信息关键词（remember_fact_tool 中使用的 key）
+        memory_id: 要删除的记忆 ID 编号
 
     Returns:
         删除确认
     """
-    success = memory_repo.delete_memory_by_key(key)
+    success = memory_repo.delete_memory(memory_id)
     if success:
-        return f"🗑️ 已删除关于「{key}」的记忆。"
-    return f"❌ 没有找到关于「{key}」的记忆。"
+        return f"🗑️ 已删除记忆 (ID: {memory_id})"
+    return f"❌ 没有找到 ID 为 {memory_id} 的记忆。"
 
 
 # ── Tool Registry ────────────────────────────────────────────────────
