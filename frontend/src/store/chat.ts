@@ -29,6 +29,16 @@ watch(
 /** 仅在首次挂载时注入欢迎消息 */
 let _initialized = false
 
+function pickGreeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 6) return '睡不着吗 🌙'
+  if (hour < 9) return '早啊 🌅 今天有什么计划？'
+  if (hour < 12) return '上午好 ☀️'
+  if (hour < 14) return '中午好 🌤️ 吃了吗？'
+  if (hour < 18) return '下午好 🌤️'
+  return '晚上好 🌙 今天过得怎么样？'
+}
+
 export function initWelcomeMessage() {
   if (_initialized) return
   _initialized = true
@@ -36,14 +46,7 @@ export function initWelcomeMessage() {
   if (chatStore.messages.length > 0) return
   chatStore.messages.push({
     role: 'assistant',
-    content: `你好！我是 HyperAgent，你的个人 AI 助手。我可以帮你管理日程：
-
-- 📅 **加日程**：加日程：明天下午3点开会
-- 🔍 **查日程**：今天有什么安排？
-- ✏️ **改日程**：把会议改到下午4点
-- ❌ **删日程**：删除 ID 为 1 的日程
-
-有什么我可以帮你的吗？`,
+    content: pickGreeting(),
   })
 }
 
@@ -96,3 +99,7 @@ function loadThreadId(): string {
     return 'hyperagent-main'
   }
 }
+
+
+
+
