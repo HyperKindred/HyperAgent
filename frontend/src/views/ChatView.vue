@@ -13,6 +13,13 @@ onMounted(() => {
   scrollToBottom()
 })
 
+async function handleNewChat() {
+  await clearChat()
+  initWelcomeMessage()
+  await nextTick()
+  scrollToBottom()
+}
+
 async function handleSend() {
   const text = input.value.trim()
   if (!text || loading.value) return
@@ -70,7 +77,7 @@ function renderMarkdown(text: string): string {
   <div class="chat-page">
     <div class="chat-header">
       <h2>💬 对话</h2>
-      <button class="btn-new-chat" @click="clearChat()" title="开启新对话（清空本地显示）">
+      <button class="btn-new-chat" @click="handleNewChat" title="开启新对话（清空本地显示）">
         ✨ 新对话
       </button>
     </div>
@@ -292,4 +299,6 @@ function renderMarkdown(text: string): string {
 .message-content p { margin: 4px 0; }
 .message-content strong { font-weight: 600; }
 </style>
+
+
 
