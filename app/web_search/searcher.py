@@ -76,47 +76,22 @@ def search_web(
         re.DOTALL,
     )
 
+        # Fallback: try result__title links + result__snippet
     if not titles:
-        return "没有找到相关结果。"
+        titles = re.findall(
+            r'<a\s+rel="nofollow"[^>]*href="(https?://[^"]*)"[^>]*>(.*?)</a>',
+            html_text,
+            re.DOTALL,
+        )
+    if not snippets:
+        snippets = re.findall(
+            r'class="result__snippet"[^>]*>(.*?)</(?:a|span|div)>',
+            html_text,
+            re.DOTALL,
+        )
 
-    results = []
-    for i, (url, title) in enumerate(titles[:max_results]):
-        title_clean = _strip_tags(title)
-        snippet = _strip_tags(snippets[i]) if i < len(snippets) else ""
-        results.append({
-            "title": title_clean,
-            "url": html.unescape(url),
-            "snippet": snippet,
-        })
-
-    # Fetch content from top result
-    top_content = ""
-    if fetch_content and results:
-        try:
-            r = session.get(results[0]["url"], timeout=TIMEOUT)
-            if r.status_code == 200:
-                text = _strip_tags(r.text)
-                # Get meaningful text (skip boilerplate)
-                text = re.sub(
-                    r"(var |function |window\.|nav|menu|footer|sidebar)",
-                    "",
-                    text[:max_content_chars * 2],
-                )
-                if len(text) > max_content_chars:
-                    text = text[:max_content_chars] + "..."
-                top_content = text
-        except requests.RequestException as e:
-            logger.warning("Content fetch failed for %s: %s", results[0]["url"], e)
-
-    # Format output
-    lines = [f"**搜索结果：「{query}」**\n"]
-    for i, r in enumerate(results, 1):
-        lines.append(f"  {i}. **{r['title']}**")
-        lines.append(f"     {r['snippet']}")
-        lines.append(f"     🔗 {r['url']}")
-
-    if top_content:
-        lines.append(f"\n📄 **{results[0]['title']} 内容摘要：**")
-        lines.append(top_content[:max_content_chars])
-
-    return "\n".join(lines)
+    if not titles:
+        logger.debug(
+            "DDG raw HTML (first 500): %s", html_text[:500]
+        )
+        return '没有找到相关结果。'

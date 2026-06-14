@@ -93,7 +93,16 @@ function renderMarkdown(text: string): string {
           {{ msg.role === 'user' ? '👤' : '🤖' }}
         </div>
         <div class="message-body">
-          <div class="message-content" v-html="renderMarkdown(msg.content)" />
+          <div class="message-content" :class="{ streaming: loading && i === chatStore.messages.length - 1 }" v-html="renderMarkdown(msg.content)" />
+        </div>
+      </div>
+
+      <div v-if="loading && chatStore.messages.length > 0 && chatStore.messages[chatStore.messages.length - 1].content === ''" class="message assistant">
+        <div class="message-avatar">🤖</div>
+        <div class="message-body">
+          <div class="typing-indicator">
+            <span></span><span></span><span></span>
+          </div>
         </div>
       </div>
 
@@ -298,6 +307,44 @@ function renderMarkdown(text: string): string {
 .message-content th { background: #f0f1f5; font-weight: 600; }
 .message-content p { margin: 4px 0; }
 .message-content strong { font-weight: 600; }
+
+.message-content.streaming::after {
+  content: "|";
+  animation: blink 0.8s step-end infinite;
+  color: #6366f1;
+  font-weight: bold;
+  margin-left: 1px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 12px 16px;
+  background: #f4f5f9;
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+}
+
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ccc;
+  animation: typing 1.4s infinite both;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
 </style>
 
 

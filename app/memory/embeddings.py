@@ -60,10 +60,11 @@ def get_embedding(
             return resp.json()["data"][0]["embedding"]
         except requests.RequestException:
             if attempt == max_retries - 1:
-                raise  # last attempt — propagate the error
+                logger.warning("Embedding API failed after %d retries", max_retries)
+                return None
             time.sleep(2**attempt)  # exponential backoff: 1s, 2s, 4s…
 
-    raise RuntimeError("unreachable")
+    return None
 
 
 # ── similarity ───────────────────────────────────────────────────────
@@ -90,6 +91,8 @@ def rank_by_similarity(
     Skips memories without an embedding.  Returns ``(score, memory)`` pairs.
     """
     query_emb = get_embedding(query)
+    if query_emb is None:
+        return [(0.0, m) for m in memories[:top_k]]
 
     scored: list[tuple[float, Memory]] = []
     for mem in memories:
@@ -101,3 +104,5 @@ def rank_by_similarity(
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored[:top_k]
+
+
