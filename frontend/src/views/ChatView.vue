@@ -179,7 +179,12 @@ async function handleSend() {
       scrollToBottom()
     }
   } catch (e: any) {
-    chatStore.messages[msgIndex].content = '❌ 请求失败：' + (e.message || '请确认后端服务是否已启动')
+    const msg = e.message || ''
+    if (msg.includes('abort') || msg.includes('timed out')) {
+      chatStore.messages[msgIndex].content = '❌ 请求超时：后端处理时间过长，请重试或检查 Vite 代理是否正常'
+    } else {
+      chatStore.messages[msgIndex].content = '❌ 请求失败：' + msg
+    }
   } finally {
     loading.value = false
     await nextTick()
@@ -417,7 +422,8 @@ function autoResize(e: Event) {
 
 .agent-avatar {
   object-fit: contain;
-  padding: 2px;
+  padding: 0;
+  transform: scale(1.15);
 }
 
 .message-body {

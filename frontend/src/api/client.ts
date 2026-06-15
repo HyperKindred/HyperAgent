@@ -90,11 +90,21 @@ export async function* sendChatStream(
   if (images && images.length > 0) payload.images = images
   if (files && files.length > 0) payload.files = files
 
-  const response = await fetch('/api/chat/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  // 120s timeout for the initial response
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 120_000)
+
+  let response: Response
+  try {
+    response = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeoutId)
+  }
 
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
 

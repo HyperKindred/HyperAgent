@@ -199,9 +199,13 @@ async def stream_agent(
                     yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
-    except Exception:
-        logger.exception("stream_agent failed")
-        yield f"data: {json.dumps({'type': 'error', 'content': 'Agent error'})}\n\n"
+    except Exception as e:
+        error_msg = str(e)
+        logger.exception("stream_agent failed: %s", error_msg)
+        # Truncate very long error messages (e.g. full API responses)
+        if len(error_msg) > 300:
+            error_msg = error_msg[:300] + "..."
+        yield f"data: {json.dumps({'type': 'error', 'content': f'请求失败: {error_msg}'})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
