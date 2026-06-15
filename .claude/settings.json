@@ -5,7 +5,9 @@
       "Bash(taskkill /f /im python3.exe)",
       "Bash(uv run *)",
       "Bash(npm run *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)"
     ]
   }
 }
