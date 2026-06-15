@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException
 from app.schedule.models import EventCreate, EventResponse, EventUpdate
 from app.schedule.notifier import notify_created, notify_deleted, notify_updated
 from app.schedule.repository import ScheduleRepository
+from app.reminder.repository import ReminderRepository
+from app.reminder.scheduler import cancel_reminder_job
 
 router = APIRouter(prefix="/events")
 repo = ScheduleRepository()
@@ -63,5 +65,15 @@ def delete_event(event_id: int):
     if not event:
         raise HTTPException(404, "Event not found")
     title = event.title
+
+    # Delete linked reminder, if any
+    try:
+        linked = ReminderRepository().get_by_event_id(event_id)
+        if linked:
+            cancel_reminder_job(linked.id)
+            ReminderRepository().delete(linked.id)
+    except Exception:
+        pass
+
     repo.delete_event(event_id)
     notify_deleted(title, event_id)
