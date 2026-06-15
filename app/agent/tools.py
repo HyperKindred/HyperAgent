@@ -105,11 +105,34 @@ def create_event_tool(
             priority=priority,
         )
     )
+
+    # ── 自动联动：创建日程的同时创建一个提醒 ─────────────────────
+    reminder_note = ""
+    try:
+        # 只在事件开始时间在未来的情况下创建提醒
+        if parsed_start > _now():
+            from app.reminder.models import ReminderCreate
+            from app.reminder.repository import ReminderRepository
+            from app.reminder.scheduler import schedule_reminder_job
+
+            reminder_repo = ReminderRepository()
+            reminder_data = ReminderCreate(
+                title=f"📅 {title}",
+                description=description or title,
+                trigger_at=parsed_start,
+            )
+            reminder = reminder_repo.create(reminder_data)
+            schedule_reminder_job(reminder)
+            reminder_note = f"\n   ⏰ 已自动设置提醒（触发时间：{parsed_start.strftime('%H:%M')}）"
+    except Exception as e:
+        reminder_note = f"\n   ⚠️ 提醒设置失败：{e}"
+
     return (
         f"✅ 已创建日程：**{event.title}**\n"
         f"   📅 {event.start_time.strftime('%Y-%m-%d %H:%M')}"
         + (f" → {parsed_end.strftime('%H:%M')}" if parsed_end else "")
         + f"\n   🆔 ID: {event.id}"
+        + reminder_note
     )
 
 
