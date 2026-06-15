@@ -15,8 +15,8 @@ import { CalendarDays, ChevronLeft, ChevronRight, Bell, Plus, X, Trash2 } from '
 const events = ref<EventItem[]>([])
 const reminders = ref<ReminderItem[]>([])
 const loading = ref(false)
-const currentMonth = ref(new Date().toISOString().slice(0, 7)) // YYYY-MM
-const selectedDate = ref(new Date().toISOString().slice(0, 10))
+const currentMonth = ref(fmtMonth(new Date()))
+const selectedDate = ref(fmtDate(new Date()))
 const showAddForm = ref(false)
 const delConfirmId = ref<number | null>(null)
 
@@ -29,6 +29,14 @@ const newPriority = ref('normal')
 const addError = ref('')
 
 // ── Helpers ────────────────────────────────────────────────────────
+function fmtDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function fmtMonth(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
 
 const yearLabel = computed(() => {
@@ -90,7 +98,10 @@ async function loadMonth() {
 function goMonth(delta: number) {
   const [y, m] = currentMonth.value.split('-').map(Number)
   const d = new Date(y, m - 1 + delta, 1)
-  currentMonth.value = d.toISOString().slice(0, 7)
+  // Use local date formatting to avoid UTC timezone shift
+  const yy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  currentMonth.value = `${yy}-${mm}`
 }
 
 function selectDay(day: number | null) {
@@ -101,7 +112,8 @@ function selectDay(day: number | null) {
 
 function isToday(day: number | null) {
   if (day == null) return false
-  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const [y, m] = currentMonth.value.split('-').map(Number)
   return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}` === today
 }
@@ -248,7 +260,7 @@ watch(currentMonth, loadMonth)
           </h2>
           <div class="month-nav">
             <button class="nav-btn" @click="goMonth(-1)" title="上个月"><ChevronLeft :size="20" /></button>
-            <button class="nav-btn" @click="currentMonth = new Date().toISOString().slice(0, 7)" title="今天">今天</button>
+            <button class="nav-btn" @click="currentMonth = fmtMonth(new Date())" title="今天">今天</button>
             <button class="nav-btn" @click="goMonth(1)" title="下个月"><ChevronRight :size="20" /></button>
           </div>
         </div>
