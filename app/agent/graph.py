@@ -98,6 +98,7 @@ def run_agent(
     config = {"configurable": {"thread_id": thread_id}}
 
     _trim_if_needed(agent, config)
+    _sanitize_history_for_model(agent, config, effective_model)
 
     # ── 构建消息 ─────────────────────────────────────────────────────
     # 策略：
@@ -157,6 +158,7 @@ async def stream_agent(
         agent = build_agent(model=effective_model)
         config = {"configurable": {"thread_id": thread_id}}
         _trim_if_needed(agent, config)
+        _sanitize_history_for_model(agent, config, effective_model)
 
         # ── 构建消息 ─────────────────────────────────────────────────
         has_files = files and len(files) > 0
@@ -231,6 +233,47 @@ def _clean_image_url(raw: str) -> str:
         return raw
     # Case 1: plain base64
     return f"data:image/jpeg;base64,{raw}"
+
+
+def _sanitize_history_for_model(agent, config: dict, model: str | None) -> None:
+    """Strip image_url content from old messages when using a non-vision model.
+
+    The vision model stores messages with image_url blocks in the history.
+    When the next turn uses a plain-text model, those image_url blocks
+    cause a 400 error. This function replaces them with a [图片] placeholder.
+    """
+    is_vision = model and "vision" in model.lower()
+    if is_vision:
+        return
+    try:
+        snapshot = agent.get_state(config)
+    except Exception:
+        return
+    messages = snapshot.values.get("messages", []) if snapshot.values else []
+    if not messages:
+        return
+    needs_update = False
+    sanitized = []
+    for msg in messages:
+        content = getattr(msg, "content", None)
+        if isinstance(content, list) and any(
+            isinstance(c, dict) and c.get("type") == "image_url" for c in content
+        ):
+            needs_update = True
+            new_content = []
+            for c in content:
+                if isinstance(c, dict) and c.get("type") == "image_url":
+                    continue
+                new_content.append(c)
+            if not new_content:
+                new_content = [{"type": "text", "text": "[图片]"}]
+            msg.content = new_content
+        sanitized.append(msg)
+    if needs_update:
+        try:
+            agent.update_state(config, {"messages": sanitized})
+        except Exception:
+            pass
 
 
 def _parse_uploaded_files(files: list[dict[str, Any]]) -> str:
