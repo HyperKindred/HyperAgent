@@ -375,6 +375,141 @@ def web_search_tool(query: str) -> str:
         搜索结果字符串（含标题、摘要、链接和内容摘要）
     """
     return search_web(query, max_results=5, fetch_content=True, max_content_chars=2000)
+
+
+# ── Reminder Tools ──────────────────────────────────────────────────────
+
+
+@tool
+def create_reminder_tool(
+    title: str,
+    trigger_time: str,
+    description: str = "",
+    recurring: str | None = None,
+) -> str:
+    """创建定时提醒。Create a scheduled reminder.
+
+    当用户说"提醒我XXX""帮我记个提醒""设置提醒""到时间提醒我""闹钟"
+    "X小时后提醒我""明天X点提醒我"等表达时使用。
+    时间可以用中文，如"5分钟后""明天下午3点""后天早上8点"。
+
+    例如：
+    - "提醒我5分钟后喝水" → title="喝水", trigger_time="5分钟后"
+    - "每天上午9点提醒我站会" → title="站会", trigger_time="每天上午9点", recurring="0 9 * * *"
+    - "明天下午3点提醒我开会" → title="开会", trigger_time="明天下午3点"
+
+    Args:
+        title: 提醒标题（必填），如"喝水""开会""吃药"
+        trigger_time: 触发时间/间隔（必填），支持中文相对时间如"5分钟后""明天下午3点"，
+                      也支持"YYYY-MM-DD HH:MM"格式
+        description: 提醒详情文字（可选）
+        recurring: 重复规则 cron 表达式（可选），如"0 9 * * *"表示每天早上9点
+
+    Returns:
+        创建结果确认字符串
+    """
+    from app.reminder.models import ReminderCreate
+    from app.reminder.repository import ReminderRepository
+    from app.reminder.scheduler import schedule_reminder_job
+
+    # Parse the trigger time
+    parsed = _parse_time(trigger_time)
+    if parsed is None:
+        raise ValueError(
+            f"无法解析触发时间：{trigger_time}。请提供具体时间，如‘5分钟后’或‘明天下午3点’。"
+        )
+
+    data = ReminderCreate(
+        title=title,
+        description=description,
+        trigger_at=parsed,
+        recurring=recurring,
+    )
+    repo = ReminderRepository()
+    reminder = repo.create(data)
+    schedule_reminder_job(reminder)
+
+    trigger_str = parsed.strftime("%Y-%m-%d %H:%M")
+    recurring_str = f" (重复: {recurring})" if recurring else ""
+    return (
+        f"⏰ 已创建提醒：**{title}**\n"
+        f"   📅 触发时间：{trigger_str}{recurring_str}\n"
+        f"   🆔 ID: {reminder.id}"
+    )
+
+
+@tool
+def list_reminders_tool(status: str | None = None) -> str:
+    """查询定时提醒列表。List scheduled reminders.
+
+    当用户问"查看提醒""有什么提醒""我的提醒""查一下提醒"等表达时使用。
+
+    Args:
+        status: 筛选状态：pending（待触发）, fired（已触发）, cancelled（已取消）。
+                不传则返回所有。
+
+    Returns:
+        提醒列表字符串
+    """
+    from app.reminder.repository import ReminderRepository
+
+    repo = ReminderRepository()
+    if status:
+        if status == "pending":
+            reminders = repo.list_pending()
+        elif status == "fired":
+            reminders = [r for r in repo.list_all() if r.status == "fired"]
+        elif status == "cancelled":
+            reminders = [r for r in repo.list_all() if r.status == "cancelled"]
+        else:
+            return f"❌ 不支持的状态：{status}。可用值：pending, fired, cancelled"
+    else:
+        reminders = repo.list_all()
+
+    if not reminders:
+        return "📭 没有找到提醒。"
+
+    status_labels = {"pending": "⏳待触发", "fired": "✅已触发", "cancelled": "❌已取消"}
+    lines = [f"📋 共 {len(reminders)} 条提醒："]
+    for i, r in enumerate(reminders, 1):
+        label = status_labels.get(r.status, r.status)
+        lines.append(
+            f"  {i}. {label} **{r.title}**  "
+            f"({r.trigger_at.strftime('%Y-%m-%d %H:%M')})  [ID: {r.id}]"
+        )
+    return "\n".join(lines)
+
+
+@tool
+def delete_reminder_tool(reminder_id: int) -> str:
+    """删除定时提醒。Delete a scheduled reminder by its ID.
+
+    当用户说"删除提醒""取消提醒""移除提醒""不提醒了"等表达时使用。
+    ID 可以从 list_reminders_tool 的结果中看到。
+
+    Args:
+        reminder_id: 提醒 ID (数字)
+
+    Returns:
+        删除结果确认字符串
+    """
+    from app.reminder.repository import ReminderRepository
+    from app.reminder.scheduler import cancel_reminder_job
+
+    repo = ReminderRepository()
+    # First check it exists and report its title
+    reminder = repo.get_by_id(reminder_id)
+    if not reminder:
+        return f"❌ 未找到 ID 为 {reminder_id} 的提醒。"
+
+    title = reminder.title
+    success = repo.delete(reminder_id)
+    if success:
+        cancel_reminder_job(reminder_id)
+        return f"🗑️ 已删除提醒：**{title}** (ID: {reminder_id})"
+    return f"❌ 删除提醒失败 (ID: {reminder_id})"
+
+
 # ── Tool Registry ────────────────────────────────────────────────────
 
 ALL_TOOLS = [
@@ -389,5 +524,8 @@ ALL_TOOLS = [
     remember_fact_tool,
     recall_facts_tool,
     forget_fact_tool,
+    create_reminder_tool,
+    list_reminders_tool,
+    delete_reminder_tool,
 ]
 

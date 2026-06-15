@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
+import NotificationToast from './components/NotificationToast.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -8,11 +9,14 @@ const isActive = (name: string) => route.name === name
 </script>
 
 <template>
+  <NotificationToast />
   <div class="app-layout">
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <span class="brand-icon">🤖</span>
+        <span class="brand-icon">
+          <img src="/avatars/agent.png" alt="HyperAgent" class="brand-img" />
+        </span>
         <span class="brand-text">HyperAgent</span>
       </div>
 
@@ -74,6 +78,17 @@ const isActive = (name: string) => route.name === name
 
 .brand-icon {
   font-size: 28px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .brand-text {

@@ -19,6 +19,7 @@ def init_db():
     from app.schedule.models import Event  # noqa: F401
     from app.schedule.notifier import CalendarNotification  # noqa: F401
     from app.memory.models import Memory  # noqa: F401
+    from app.reminder.models import Reminder, PendingNotification  # noqa: F401
 
     Base.metadata.create_all(engine)
 

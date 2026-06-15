@@ -153,14 +153,17 @@ renderMarkdown() 只处理了加粗和换行。system prompt 中大量使用的 
 
 目标：agent 从"你问我答"变成"会主动找你"。
 
-- [ ] 定时提醒与通知系统（APScheduler + SQLite）
+- [x] 定时提醒与通知系统（APScheduler + SQLite）
 - [ ] 天气/新闻等更多工具
 - [x] Web 搜索工具（搜索 + 内容摘要）
 - [ ] 多线程对话管理（前端显示历史线程列表）
-- [ ] 基础的用户认证（单人模式 API key）
+- [x] 一键启动：Electron 桌面应用骨架（系统托盘 + 原生通知，`npm run electron:dev`）
 - [x] 多模态支持
 - [x] 文件上传处理（上传 PDF / Word / TXT / 图片给 agent 分析）
 - [ ] 第三方集成（Notion，邮件）
+
+> 🔐 用户认证（API key 鉴权）已从路线图中移除。单人本地模式无需此功能。
+> 未来需要暴露到网络时可快速添加（预计工作量 ~30 分钟）。
 ### Phase 3 — 深度个性化（2-3 月）
 
 目标：agent 真正"了解你"，能给出有个人上下文判断的建议。
@@ -186,7 +189,7 @@ renderMarkdown() 只处理了加粗和换行。system prompt 中大量使用的 
 - [ ] 语音输出（GPT-SoVITS / Fish Speech TTS）
 - [ ] 图像理解（看得懂截图、图片描述）
 - [ ] 插件/技能系统（第三方可扩展能力）
-- [ ] Electron 桌面应用打包
+- [x] Electron 桌面应用打包（骨架已提前到 Phase 2.1：系统托盘 + 原生通知 + 子进程管理）
 
 ### Phase 5 — 自主代理（长期愿景）
 

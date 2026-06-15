@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5174 && electron ../electron/main.js --dev\"",
+    "electron:build": "vue-tsc -b && vite build && electron ../electron/main.js",
+    "electron:start": "electron ../electron/main.js"
   },
   "dependencies": {
     "axios": "^1.17.0",
@@ -18,8 +21,11 @@
     "@types/node": "^24.12.3",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vue/tsconfig": "^0.9.1",
+    "concurrently": "^9.1.2",
+    "electron": "^35.0.0",
     "typescript": "~6.0.2",
     "vite": "^8.0.12",
-    "vue-tsc": "^3.2.8"
+    "vue-tsc": "^3.2.8",
+    "wait-on": "^8.0.3"
   }
 }

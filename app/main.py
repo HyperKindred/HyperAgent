@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import chat, schedule
+from app.api import chat, reminder as reminder_api, schedule
 from app.schedule.database import init_db
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -16,9 +16,12 @@ FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
+    """Initialize database and start scheduler on startup."""
     init_db()
+    from app.reminder.scheduler import start_scheduler, stop_scheduler
+    scheduler = start_scheduler()
     yield
+    stop_scheduler()
 
 
 app = FastAPI(
@@ -31,7 +34,7 @@ app = FastAPI(
 # Allow Vue dev server (localhost:5173) to call the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +43,7 @@ app.add_middleware(
 # ── API routers ──────────────────────────────────────────────────────
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(schedule.router, prefix="/api", tags=["schedule"])
+app.include_router(reminder_api.router, prefix="/api", tags=["reminder"])
 
 
 # ── Static frontend serving (production mode) ─────────────────────────

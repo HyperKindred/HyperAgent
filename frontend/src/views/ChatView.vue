@@ -227,7 +227,18 @@ function renderMarkdown(text: string): string {
         :class="msg.role"
       >
         <div class="message-avatar">
-          {{ msg.role === 'user' ? '👤' : '🤖' }}
+          <img
+            v-if="msg.role === 'user'"
+            src="/avatars/user.png"
+            alt="用户"
+            class="avatar-img user-avatar"
+          />
+          <img
+            v-else
+            src="/avatars/agent.png"
+            alt="HyperAgent"
+            class="avatar-img agent-avatar"
+          />
         </div>
     <div class="message-body">
           <div v-if="msg.images && msg.images.length > 0" class="message-images">
@@ -366,6 +377,19 @@ function renderMarkdown(text: string): string {
   justify-content: center;
   font-size: 18px;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.agent-avatar {
+  object-fit: contain;
+  padding: 2px;
 }
 
 .message-body {
