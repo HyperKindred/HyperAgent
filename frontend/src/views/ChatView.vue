@@ -63,6 +63,14 @@ function compressImage(file: File, maxSize = 1024, quality = 0.7): Promise<strin
   })
 }
 
+function isImageFile(file: File): boolean {
+  // Check MIME type first, then fall back to extension
+  if (file.type.startsWith('image/')) return true
+  const imgExts = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg']
+  const ext = '.' + (file.name.split('.').pop() || '').toLowerCase()
+  return imgExts.includes(ext)
+}
+
 async function handleFileSelect(e: Event) {
   const files = (e.target as HTMLInputElement).files
   if (!files) return
@@ -71,7 +79,7 @@ async function handleFileSelect(e: Event) {
       alert(`文件 "${file.name}" 超过 ${MAX_FILE_SIZE_MB}MB，已跳过`)
       continue
     }
-    if (file.type.startsWith('image/')) {
+    if (isImageFile(file)) {
       if (pendingImages.value.length >= MAX_IMAGES) break
       try {
         const b64 = await compressImage(file)
