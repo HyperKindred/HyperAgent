@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
 import NotificationToast from './components/NotificationToast.vue'
+import { MessageSquare, CalendarDays } from '@lucide/vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -26,7 +27,7 @@ const isActive = (name: string) => route.name === name
           :class="{ active: isActive('chat') }"
           @click="router.push('/')"
         >
-          <span class="nav-icon">💬</span>
+          <span class="nav-icon"><MessageSquare :size="20" /></span>
           <span>对话</span>
         </button>
         <button
@@ -34,7 +35,7 @@ const isActive = (name: string) => route.name === name
           :class="{ active: isActive('calendar') }"
           @click="router.push('/calendar')"
         >
-          <span class="nav-icon">📅</span>
+          <span class="nav-icon"><CalendarDays :size="20" /></span>
           <span>日程</span>
         </button>
       </nav>

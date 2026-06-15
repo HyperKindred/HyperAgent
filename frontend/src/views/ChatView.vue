@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, computed } from 'vue'
 import { marked } from 'marked'
 import { sendChatStream } from '../api/client'
 import { chatStore, initWelcomeMessage, clearChat } from '../store/chat'
+import { MessageSquare, Plus, Send, Paperclip, FileText, Code, File, X, Image as ImageIcon } from '@lucide/vue'
 
 const input = ref('')
 const loading = ref(false)
@@ -14,8 +15,9 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const MAX_IMAGES = 3
 const MAX_FILE_SIZE_MB = 5
 const MAX_FILES = 5
-// Single accept string covering all supported types — images + documents
 const ACCEPT_ALL = '.png,.jpg,.jpeg,.webp,.pdf,.docx,.doc,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.yaml,.yml,.xml,.ini,.cfg,.log,.sh,.bat,.env'
+
+const hasInput = computed(() => input.value.trim().length > 0 || pendingImages.value.length > 0 || pendingFiles.value.length > 0)
 
 onMounted(() => {
   initWelcomeMessage()
@@ -31,7 +33,6 @@ async function handleNewChat() {
   scrollToBottom()
 }
 
-// ── Image compression ────────────────────────────────────────────
 function compressImage(file: File, maxSize = 1024, quality = 0.7): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -75,7 +76,7 @@ async function handleFileSelect(e: Event) {
       try {
         const b64 = await compressImage(file)
         pendingImages.value.push(b64)
-      } catch { /* skip failed images */ }
+      } catch { /* skip */ }
     } else {
       if (pendingFiles.value.length >= MAX_FILES) {
         alert(`最多同时上传 ${MAX_FILES} 个文件`)
@@ -83,9 +84,8 @@ async function handleFileSelect(e: Event) {
       }
       try {
         const dataUrl = await readFileAsBase64(file)
-        const content = dataUrl.split(',')[1] || dataUrl
-        pendingFiles.value.push({ name: file.name, content, mime: file.type })
-      } catch { /* skip failed files */ }
+        pendingFiles.value.push({ name: file.name, content: dataUrl.split(',')[1] || dataUrl, mime: file.type })
+      } catch { /* skip */ }
     }
   }
   if (fileInput.value) fileInput.value.value = ''
@@ -102,9 +102,7 @@ function handlePaste(e: ClipboardEvent) {
       if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) continue
       if (pendingImages.value.length >= MAX_IMAGES) break
       compressImage(file).then(b64 => {
-        if (pendingImages.value.length < MAX_IMAGES) {
-          pendingImages.value.push(b64)
-        }
+        if (pendingImages.value.length < MAX_IMAGES) pendingImages.value.push(b64)
       })
     }
   }
@@ -114,7 +112,6 @@ function removePendingImage(index: number) {
   pendingImages.value.splice(index, 1)
 }
 
-// ── File upload ──────────────────────────────────────────────────
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -128,21 +125,21 @@ function removePendingFile(index: number) {
   pendingFiles.value.splice(index, 1)
 }
 
-function getFileIcon(name: string): string {
+function getFileIcon(name: string): any {
   const ext = name.split('.').pop()?.toLowerCase()
   switch (ext) {
-    case 'pdf': return '📕'
+    case 'pdf': return FileText
     case 'docx':
-    case 'doc': return '📘'
+    case 'doc': return FileText
     case 'txt':
-    case 'md': return '📄'
+    case 'md': return FileText
     case 'py':
     case 'js':
     case 'ts':
     case 'json':
     case 'css':
-    case 'html': return '📝'
-    default: return '📎'
+    case 'html': return Code
+    default: return File
   }
 }
 
@@ -182,8 +179,7 @@ async function handleSend() {
       scrollToBottom()
     }
   } catch (e: any) {
-    chatStore.messages[msgIndex].content =
-      '❌ 请求失败：' + (e.message || '请确认后端服务是否已启动')
+    chatStore.messages[msgIndex].content = '❌ 请求失败：' + (e.message || '请确认后端服务是否已启动')
   } finally {
     loading.value = false
     await nextTick()
@@ -208,110 +204,125 @@ function renderMarkdown(text: string): string {
   const html = marked.parse(text, { breaks: true })
   return typeof html === 'string' ? html : ''
 }
+
+function autoResize(e: Event) {
+  const el = e.target as HTMLTextAreaElement
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 270) + 'px'
+}
 </script>
 
 <template>
   <div class="chat-page">
+    <!-- Header -->
     <div class="chat-header">
-      <h2>💬 对话</h2>
-      <button class="btn-new-chat" @click="handleNewChat" title="开启新对话（清空本地显示）">
-        ✨ 新对话
+      <h2><MessageSquare :size="20" /> 对话</h2>
+      <button class="btn-new-chat" @click="handleNewChat" title="开启新对话">
+        <Plus :size="16" />
+        <span>新对话</span>
       </button>
     </div>
 
+    <!-- Messages -->
     <div class="chat-messages" ref="chatContainer">
-      <div
-        v-for="(msg, i) in chatStore.messages"
-        :key="i"
-        class="message"
-        :class="msg.role"
-      >
-        <div class="message-avatar">
-          <img
-            v-if="msg.role === 'user'"
-            src="/avatars/user.png"
-            alt="用户"
-            class="avatar-img user-avatar"
-          />
-          <img
-            v-else
-            src="/avatars/agent.png"
-            alt="HyperAgent"
-            class="avatar-img agent-avatar"
-          />
+      <div class="messages-inner">
+        <div
+          v-for="(msg, i) in chatStore.messages"
+          :key="i"
+          class="message"
+          :class="msg.role"
+        >
+          <div class="message-avatar">
+            <img
+              v-if="msg.role === 'user'"
+              src="/avatars/user.png"
+              alt="用户"
+              class="avatar-img"
+            />
+            <img
+              v-else
+              src="/avatars/agent.png"
+              alt="HyperAgent"
+              class="avatar-img agent-avatar"
+            />
+          </div>
+          <div class="message-body">
+            <div v-if="msg.images && msg.images.length > 0" class="message-images">
+              <img v-for="(img, j) in msg.images" :key="j" :src="img" class="msg-img" alt="图片" />
+            </div>
+            <div v-else-if="msg.hasImages" class="message-images">
+              <div class="img-placeholder"><ImageIcon :size="14" /> <span>图片</span></div>
+            </div>
+            <div v-if="msg.fileInfo && msg.fileInfo.length > 0" class="message-files">
+              <div v-for="(f, j) in msg.fileInfo" :key="'fi'+j" class="file-badge">
+                <component :is="getFileIcon(f.name)" :size="14" />
+                <span>{{ f.name }}</span>
+              </div>
+            </div>
+            <div v-else-if="msg.files && msg.files.length > 0" class="message-files">
+              <div v-for="(f, j) in msg.files" :key="'ff'+j" class="file-badge">
+                <component :is="getFileIcon(f.name)" :size="14" />
+                <span>{{ f.name }}</span>
+              </div>
+            </div>
+            <div class="message-content" :class="{ 'cursor-blink': loading && i === chatStore.messages.length - 1 && msg.content }">
+              <div v-if="loading && i === chatStore.messages.length - 1 && !msg.content" class="typing-indicator">
+                <span></span><span></span><span></span>
+              </div>
+              <div v-else v-html="renderMarkdown(msg.content)" />
+            </div>
+          </div>
         </div>
-    <div class="message-body">
-          <div v-if="msg.images && msg.images.length > 0" class="message-images">
-            <img v-for="(img, j) in msg.images" :key="j" :src="img" class="msg-img" alt="图片" />
-          </div>
-          <div v-else-if="msg.hasImages" class="message-images">
-            <div class="img-placeholder">🖼️ <span>图片</span></div>
-          </div>
-          <div v-if="msg.fileInfo && msg.fileInfo.length > 0" class="message-files">
-            <div v-for="(f, j) in msg.fileInfo" :key="'fi'+j" class="file-badge">
-              {{ getFileIcon(f.name) }} <span>{{ f.name }}</span>
-            </div>
-          </div>
-          <div v-else-if="msg.files && msg.files.length > 0" class="message-files">
-            <div v-for="(f, j) in msg.files" :key="'ff'+j" class="file-badge">
-              {{ getFileIcon(f.name) }} <span>{{ f.name }}</span>
-            </div>
-          </div>
-          <div class="message-content" :class="{ 'cursor-blink': loading && i === chatStore.messages.length - 1 && msg.content }">
-            <div v-if="loading && i === chatStore.messages.length - 1 && !msg.content" class="typing-indicator">
-              <span></span><span></span><span></span>
-            </div>
-            <div v-else v-html="renderMarkdown(msg.content)" />
-          </div>
-    </div>
+      </div>
     </div>
 
-    </div>
-
-    <div class="pending-images" v-if="pendingImages.length > 0">
+    <!-- Pending file previews -->
+    <div class="pending-previews" v-if="pendingImages.length > 0 || pendingFiles.length > 0">
       <div v-for="(img, i) in pendingImages" :key="'p'+i" class="pending-image-item">
         <img :src="img" class="pending-thumb" alt="待发送图片" />
-        <button class="remove-img" @click="removePendingImage(i)" title="移除">&times;</button>
+        <button class="remove-btn" @click="removePendingImage(i)" title="移除"><X :size="12" /></button>
       </div>
-      <span class="pending-hint">{{ pendingImages.length }}/{{ MAX_IMAGES }}</span>
-    </div>
-
-    <div class="pending-files" v-if="pendingFiles.length > 0">
       <div v-for="(f, i) in pendingFiles" :key="'pf'+i" class="pending-file-item">
-        <span class="file-item-icon">{{ getFileIcon(f.name) }}</span>
-        <span class="file-item-name">{{ f.name }}</span>
-        <button class="remove-img" @click="removePendingFile(i)" title="移除">&times;</button>
+        <component :is="getFileIcon(f.name)" :size="16" />
+        <span class="pending-file-name">{{ f.name }}</span>
+        <button class="remove-btn" @click="removePendingFile(i)" title="移除"><X :size="12" /></button>
       </div>
     </div>
 
-    <div class="chat-input-area">
-      <label class="upload-btn" title="上传文件或图片（支持 PDF / Word / TXT / 图片 / 代码等）">
-        <!-- paperclip icon -->
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-        <input type="file" ref="fileInput" :accept="ACCEPT_ALL" multiple hidden @change="handleFileSelect" />
-      </label>
-      <textarea
-        v-model="input"
-        class="chat-input"
-        placeholder="输入你的问题... (Shift+Enter 换行，Enter 发送)"
-        rows="2"
-        :disabled="loading"
-        @keydown="handleKeydown"
-        @paste="handlePaste"
-      ></textarea>
-      <button
-        class="send-btn"
-        :disabled="(!input.trim() && pendingImages.length === 0) || loading"
-        @click="handleSend"
-      >
-        <span v-if="!loading">发送</span>
-        <span v-else>思考中...</span>
-      </button>
+    <!-- Input area -->
+    <div class="chat-input-area" :class="{ 'has-input': hasInput }">
+      <div class="input-wrapper">
+        <textarea
+          v-model="input"
+          class="chat-input"
+          placeholder="输入你的问题... (Shift+Enter 换行，Enter 发送)"
+          rows="1"
+          :disabled="loading"
+          @keydown="handleKeydown"
+          @paste="handlePaste"
+          @input="autoResize"
+        ></textarea>
+      </div>
+      <div class="input-actions">
+        <label class="action-btn upload-btn" title="上传文件或图片">
+          <Paperclip :size="20" />
+          <input type="file" ref="fileInput" :accept="ACCEPT_ALL" multiple hidden @change="handleFileSelect" />
+        </label>
+        <button
+          class="action-btn send-btn"
+          :disabled="!hasInput || loading"
+          @click="handleSend"
+          :title="loading ? '思考中...' : '发送'"
+        >
+          <Send :size="20" />
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* ── Layout ─────────────────────────────────────────────── */
 .chat-page {
   display: flex;
   flex-direction: column;
@@ -319,8 +330,9 @@ function renderMarkdown(text: string): string {
   background: #fff;
 }
 
+/* ── Header ─────────────────────────────────────────────── */
 .chat-header {
-  padding: 20px 28px 16px;
+  padding: 16px 28px;
   border-bottom: 1px solid #eef0f4;
   flex-shrink: 0;
   display: flex;
@@ -330,54 +342,70 @@ function renderMarkdown(text: string): string {
 
 .chat-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1f2937;
 }
 
 .btn-new-chat {
-  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
   background: transparent;
-  color: #999;
-  border: 1px solid #e0e3e8;
-  border-radius: 6px;
+  color: #9ca3af;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .btn-new-chat:hover {
-  background: #f0f1f5;
+  background: #f9fafb;
   color: #6366f1;
   border-color: #c7d2fe;
 }
 
+/* ── Messages ───────────────────────────────────────────── */
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 28px;
+  padding: 0;
+}
+
+.messages-inner {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 28px;
 }
 
 .message {
   display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 14px;
+  margin-bottom: 24px;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .message.user {
   flex-direction: row-reverse;
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .message-avatar {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: #f0f1f5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
   flex-shrink: 0;
   overflow: hidden;
+  margin-top: 4px;
 }
 
 .avatar-img {
@@ -394,6 +422,7 @@ function renderMarkdown(text: string): string {
 
 .message-body {
   max-width: 75%;
+  min-width: 0;
 }
 
 .message.user .message-body {
@@ -403,25 +432,26 @@ function renderMarkdown(text: string): string {
 }
 
 .message-content {
-  padding: 12px 16px;
-  border-radius: 12px;
+  padding: 12px 18px;
+  border-radius: 18px;
   font-size: 15px;
   line-height: 1.65;
   word-break: break-word;
 }
 
 .message.assistant .message-content {
-  background: #f4f5f9;
-  color: #333;
-  border-bottom-left-radius: 4px;
+  background: #f2f3f7;
+  color: #1f2937;
+  border-bottom-left-radius: 6px;
 }
 
 .message.user .message-content {
   background: #6366f1;
   color: #fff;
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 6px;
 }
 
+/* ── Images / files in messages ─────────────────────────── */
 .message-images {
   display: flex;
   flex-wrap: wrap;
@@ -434,9 +464,9 @@ function renderMarkdown(text: string): string {
   width: 100%;
   max-width: 240px;
   max-height: 180px;
-  border-radius: 10px;
+  border-radius: 12px;
   object-fit: cover;
-  border: 1px solid #e0e3e8;
+  border: 1px solid #e5e7eb;
 }
 
 .img-placeholder {
@@ -444,101 +474,18 @@ function renderMarkdown(text: string): string {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  background: #f0f1f5;
+  background: #f3f4f6;
   border-radius: 6px;
   font-size: 12px;
-  color: #999;
+  color: #9ca3af;
   margin-bottom: 6px;
 }
 
 .img-placeholder span {
   font-size: 12px;
-  color: #999;
+  color: #9ca3af;
 }
 
-.pending-images {
-  display: flex;
-  gap: 10px;
-  padding: 12px 28px 0;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.pending-image-item {
-  position: relative;
-}
-
-.pending-thumb {
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
-  object-fit: cover;
-  border: 1px solid #e0e3e8;
-}
-
-.remove-img {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: none;
-  background: #ef4444;
-  color: #fff;
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
-.remove-img:hover {
-  background: #dc2626;
-}
-
-.pending-hint {
-  font-size: 12px;
-  color: #999;
-  margin-left: 4px;
-}
-
-/* ── Pending files ──────────────────────────────────────────── */
-.pending-files {
-  display: flex;
-  gap: 8px;
-  padding: 6px 28px 0;
-  align-items: center;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.pending-file-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: #f0f1f5;
-  border-radius: 6px;
-  font-size: 13px;
-  position: relative;
-}
-
-.file-item-icon {
-  font-size: 16px;
-}
-
-.file-item-name {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #555;
-}
-
-/* ── File badges in message history ─────────────────────────── */
 .message-files {
   display: flex;
   flex-wrap: wrap;
@@ -551,10 +498,10 @@ function renderMarkdown(text: string): string {
   align-items: center;
   gap: 4px;
   padding: 3px 10px;
-  background: #eef0f4;
+  background: #f3f4f6;
   border-radius: 6px;
   font-size: 12px;
-  color: #555;
+  color: #6b7280;
 }
 
 .file-badge span {
@@ -564,63 +511,149 @@ function renderMarkdown(text: string): string {
   white-space: nowrap;
 }
 
-.chat-input-area {
-  padding: 12px 28px 24px;
-  border-top: 1px solid #eef0f4;
+/* ── Pending previews (between messages & input) ──────────── */
+.pending-previews {
   display: flex;
   gap: 10px;
-  align-items: flex-end;
+  padding: 0 28px 8px;
+  align-items: center;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.upload-btn {
+.pending-image-item {
+  position: relative;
+}
+
+.pending-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #e5e7eb;
+}
+
+.pending-file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #6b7280;
+  position: relative;
+}
+
+.pending-file-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-btn {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid #e0e3e8;
-  border-radius: 10px;
-  background: #fff;
-  color: #999;
-  cursor: pointer;
-  transition: all 0.15s;
+  padding: 0;
+  transition: background 0.15s;
+}
+
+.remove-btn:hover { background: #dc2626; }
+
+/* ── Input area ──────────────────────────────────────────── */
+.chat-input-area {
+  padding: 0 28px 16px;
   flex-shrink: 0;
 }
 
-.upload-btn:hover {
-  background: #f0f1f5;
-  color: #6366f1;
-  border-color: #c7d2fe;
+.input-wrapper {
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  background: #fff;
+  border: 1.5px solid #d1d5db;
+  border-radius: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  overflow: hidden;
+}
+
+.input-wrapper:focus-within {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
 .chat-input {
-  flex: 1;
-  padding: 12px 16px;
-  border: 1px solid #e0e3e8;
-  border-radius: 10px;
+  width: 100%;
+  padding: 14px 18px;
+  border: none;
+  outline: none;
   font-size: 15px;
   font-family: inherit;
+  line-height: 1.6;
   resize: none;
-  outline: none;
-  transition: border-color 0.15s;
+  background: transparent;
+  color: #1f2937;
+  min-height: 26px;
+  max-height: 270px; /* ~8 lines */
 }
 
-.chat-input:focus {
-  border-color: #6366f1;
+.chat-input::placeholder {
+  color: #9ca3af;
+}
+
+.chat-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── Input action buttons ───────────────────────────────── */
+.input-actions {
+  max-width: 800px;
+  margin: 8px auto 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  background: transparent;
+  color: #9ca3af;
+}
+
+.upload-btn:hover {
+  background: #f3f4f6;
+  color: #6366f1;
 }
 
 .send-btn {
-  padding: 12px 24px;
   background: #6366f1;
   color: #fff;
-  border: none;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s;
-  flex-shrink: 0;
 }
 
 .send-btn:hover:not(:disabled) {
@@ -628,12 +661,17 @@ function renderMarkdown(text: string): string {
 }
 
 .send-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
+}
+
+.chat-input-area.has-input .send-btn:not(:disabled) {
+  opacity: 1;
 }
 </style>
 
 <style>
+/* ── Global markdown content styles ──────────────────────── */
 .message-content code {
   background: #f0f0f3;
   padding: 2px 6px;
@@ -644,7 +682,7 @@ function renderMarkdown(text: string): string {
 .message-content pre {
   background: #f4f5f9;
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: 10px;
   overflow-x: auto;
   margin: 8px 0;
 }
@@ -653,7 +691,7 @@ function renderMarkdown(text: string): string {
   border-left: 3px solid #6366f1;
   margin: 8px 0;
   padding: 4px 12px;
-  color: #666;
+  color: #6b7280;
 }
 .message-content ul, .message-content ol { padding-left: 20px; margin: 6px 0; }
 .message-content a { color: #6366f1; text-decoration: none; }
@@ -661,7 +699,7 @@ function renderMarkdown(text: string): string {
 .message-content table { border-collapse: collapse; margin: 8px 0; font-size: 0.9em; }
 .message-content th, .message-content td { border: 1px solid #ddd; padding: 6px 10px; }
 .message-content th { background: #f0f1f5; font-weight: 600; }
-.message-content p { margin: 4px 0; }
+.message-content p { margin: 6px 0; }
 .message-content strong { font-weight: 600; }
 
 .message-content.cursor-blink::after {
@@ -679,18 +717,15 @@ function renderMarkdown(text: string): string {
 
 .typing-indicator {
   display: flex;
-  gap: 4px;
-  padding: 12px 16px;
-  background: #f4f5f9;
-  border-radius: 12px;
-  border-bottom-left-radius: 4px;
+  gap: 5px;
+  padding: 14px 16px;
 }
 
 .typing-indicator span {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #ccc;
+  background: #c4c8d4;
   animation: typing 1.4s infinite both;
 }
 

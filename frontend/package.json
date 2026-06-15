@@ -12,6 +12,7 @@
     "electron:start": "electron ../electron/main.js"
   },
   "dependencies": {
+    "@lucide/vue": "^1.18.0",
     "axios": "^1.17.0",
     "marked": "^18.0.5",
     "vue": "^3.5.34",
