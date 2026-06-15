@@ -236,11 +236,11 @@ def _clean_image_url(raw: str) -> str:
 
 
 def _sanitize_history_for_model(agent, config: dict, model: str | None) -> None:
-    """Strip image_url content from old messages when using a non-vision model.
+    """Remove old HumanMessages with ``image_url`` content from history.
 
     The vision model stores messages with ``image_url`` blocks in the history.
     When the next turn uses a plain-text model, those blocks cause a 400 error.
-    This function replaces them with a ``[图片]`` text placeholder.
+    This function removes those messages entirely to avoid the issue.
     """
     is_vision = model and "vision" in model.lower()
     if is_vision:
@@ -252,24 +252,26 @@ def _sanitize_history_for_model(agent, config: dict, model: str | None) -> None:
     messages = snapshot.values.get("messages", []) if snapshot.values else []
     if not messages:
         return
-    needs_update = False
-    sanitized = []
+
+    # Remove HumanMessages that contain image_url content
+    ids_to_remove = []
     for msg in messages:
         content = getattr(msg, "content", None)
         if isinstance(content, list) and any(
             isinstance(c, dict) and c.get("type") == "image_url" for c in content
         ):
-            needs_update = True
-            # Extract text parts, ignore image_url parts
-            texts = [c["text"] for c in content if isinstance(c, dict) and c.get("type") == "text"]
-            combined = "\n".join(texts) if texts else "[图片]"
-            msg.content = combined
-        sanitized.append(msg)
-    if needs_update:
-        try:
-            agent.update_state(config, {"messages": sanitized})
-        except Exception:
-            pass
+            ids_to_remove.append(msg.id)
+
+    if not ids_to_remove:
+        return
+
+    from langgraph.graph.message import RemoveMessage
+
+    removals = [RemoveMessage(id=mid) for mid in ids_to_remove]
+    try:
+        agent.update_state(config, {"messages": removals})
+    except Exception:
+        pass
 
 
 def _parse_uploaded_files(files: list[dict[str, Any]]) -> str:
