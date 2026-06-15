@@ -38,6 +38,7 @@ class ReminderRepository:
                 description=data.description,
                 trigger_at=data.trigger_at,
                 recurring=data.recurring,
+                event_id=data.event_id,
                 status="pending",
             )
             db.add(reminder)
@@ -54,6 +55,19 @@ class ReminderRepository:
         db = self._session()
         try:
             return db.query(Reminder).filter(Reminder.id == reminder_id).first()
+        finally:
+            if self._db is None:
+                db.close()
+
+    def get_by_event_id(self, event_id: int) -> Optional[Reminder]:
+        """Return the pending reminder linked to a schedule event, if any."""
+        db = self._session()
+        try:
+            return (
+                db.query(Reminder)
+                .filter(Reminder.event_id == event_id, Reminder.status == "pending")
+                .first()
+            )
         finally:
             if self._db is None:
                 db.close()

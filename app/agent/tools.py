@@ -120,6 +120,7 @@ def create_event_tool(
                 title=f"📅 {title}",
                 description=description or title,
                 trigger_at=parsed_start,
+                event_id=event.id,
             )
             reminder = reminder_repo.create(reminder_data)
             schedule_reminder_job(reminder)
@@ -202,6 +203,38 @@ def update_event_tool(event_id: int, **kwargs) -> str:
     if event is None:
         return f"❌ 未找到 ID 为 {event_id} 的日程事件。"
 
+    # ── 同步关联提醒 ─────────────────────────────────────────────
+    try:
+        from app.reminder.repository import ReminderRepository
+        from app.reminder.scheduler import cancel_reminder_job, schedule_reminder_job
+        from app.reminder.models import ReminderCreate
+
+        rrepo = ReminderRepository()
+        linked = rrepo.get_by_event_id(event_id)
+
+        if linked:
+            # 取消旧提醒
+            cancel_reminder_job(linked.id)
+
+            if kwargs.get("status") in ("completed", "cancelled"):
+                # 日程标记完成/取消 → 删除提醒
+                rrepo.delete(linked.id)
+            else:
+                # 更新提醒标题和/或触发时间
+                new_title = f"📅 {kwargs.get('title', linked.title.removeprefix('📅 '))}"
+                new_trigger = kwargs.get("start_time", linked.trigger_at)
+                # 重建提醒（简单做法：删旧建新）
+                rrepo.delete(linked.id)
+                new_reminder = rrepo.create(ReminderCreate(
+                    title=new_title,
+                    description=event.description or event.title,
+                    trigger_at=new_trigger,
+                    event_id=event.id,
+                ))
+                schedule_reminder_job(new_reminder)
+    except Exception:
+        pass
+
     return f"✅ 已更新日程：**{event.title}** (ID: {event.id})"
 
 
@@ -220,6 +253,19 @@ def delete_event_tool(event_id: int) -> str:
     """
     success = repo.delete_event(event_id)
     if success:
+        # Also delete linked reminder, if any
+        try:
+            from app.reminder.repository import ReminderRepository
+            from app.reminder.scheduler import cancel_reminder_job
+
+            rrepo = ReminderRepository()
+            linked = rrepo.get_by_event_id(event_id)
+            if linked:
+                cancel_reminder_job(linked.id)
+                rrepo.delete(linked.id)
+                return f"🗑️ 已删除日程及关联提醒 (ID: {event_id})"
+        except Exception:
+            pass
         return f"🗑️ 已删除日程 (ID: {event_id})"
     return f"❌ 未找到 ID 为 {event_id} 的日程事件。"
 

@@ -23,6 +23,7 @@ class Reminder(Base):
     status = Column(String(20), nullable=False, default="pending")  # pending | fired | cancelled
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     fired_at = Column(DateTime, nullable=True)
+    event_id = Column(Integer, nullable=True, index=True)  # linked schedule event, if any
 
 
 class PendingNotification(Base):
@@ -45,6 +46,7 @@ class ReminderCreate(BaseModel):
     description: str = ""
     trigger_at: datetime
     recurring: Optional[str] = None
+    event_id: Optional[int] = None
 
 
 class ReminderUpdate(BaseModel):
