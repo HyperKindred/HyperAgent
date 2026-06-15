@@ -238,9 +238,9 @@ def _clean_image_url(raw: str) -> str:
 def _sanitize_history_for_model(agent, config: dict, model: str | None) -> None:
     """Strip image_url content from old messages when using a non-vision model.
 
-    The vision model stores messages with image_url blocks in the history.
-    When the next turn uses a plain-text model, those image_url blocks
-    cause a 400 error. This function replaces them with a [图片] placeholder.
+    The vision model stores messages with ``image_url`` blocks in the history.
+    When the next turn uses a plain-text model, those blocks cause a 400 error.
+    This function replaces them with a ``[图片]`` text placeholder.
     """
     is_vision = model and "vision" in model.lower()
     if is_vision:
@@ -260,14 +260,10 @@ def _sanitize_history_for_model(agent, config: dict, model: str | None) -> None:
             isinstance(c, dict) and c.get("type") == "image_url" for c in content
         ):
             needs_update = True
-            new_content = []
-            for c in content:
-                if isinstance(c, dict) and c.get("type") == "image_url":
-                    continue
-                new_content.append(c)
-            if not new_content:
-                new_content = [{"type": "text", "text": "[图片]"}]
-            msg.content = new_content
+            # Extract text parts, ignore image_url parts
+            texts = [c["text"] for c in content if isinstance(c, dict) and c.get("type") == "text"]
+            combined = "\n".join(texts) if texts else "[图片]"
+            msg.content = combined
         sanitized.append(msg)
     if needs_update:
         try:
