@@ -1,14 +1,30 @@
 import { reactive, watch } from 'vue'
 import { createThread } from '../api/client'
 
+export interface FileAttachment {
+  name: string
+  content: string  // base64 — not persisted to localStorage
+  mime: string
+}
+
+/** Persisted file metadata — name & type survive page refresh. */
+export interface FileInfo {
+  name: string
+  mime: string
+}
+
 export interface Message {
   role: 'user' | 'assistant'
   content: string
   /** Base64 images — only kept in memory during the session.
    *  Stripped before localStorage persistence to avoid quota issues. */
   images?: string[]
+  /** Uploaded files — only kept in memory during the session. */
+  files?: FileAttachment[]
   /** Persisted flag: true if this message originally had images. */
   hasImages?: boolean
+  /** Persisted file info (name + mime only) — survives page refresh. */
+  fileInfo?: FileInfo[]
 }
 
 interface ChatStore {
@@ -72,12 +88,15 @@ function loadMessages(): Message[] {
 
 function saveMessages(msgs: Message[]) {
   try {
-    // Strip images before serialization but keep a hasImages flag.
-    const stripped = msgs.map(({ images, ...rest }) => {
-      if (images && images.length > 0) {
-        return { ...rest, hasImages: true }
+    // Strip images and files content before serialization,
+    // but keep fileInfo (name + mime) so filenames survive refresh.
+    const stripped = msgs.map(({ images, files, ...rest }) => {
+      const out: Record<string, any> = { ...rest }
+      if (images && images.length > 0) out.hasImages = true
+      if (files && files.length > 0) {
+        out.fileInfo = files.map(({ name, mime }) => ({ name, mime }))
       }
-      return rest
+      return out as Message
     })
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped.slice(-MAX_STORED)))
   } catch {

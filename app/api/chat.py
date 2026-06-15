@@ -12,11 +12,20 @@ from app.agent.graph import run_agent, stream_agent
 router = APIRouter()
 
 
+class FileItem(BaseModel):
+    """An uploaded file attached to a chat message."""
+
+    name: str  # filename including extension, e.g. "report.pdf"
+    content: str  # base64-encoded file content
+    mime: str = ""  # MIME type, e.g. "application/pdf"
+
+
 class ChatRequest(BaseModel):
     message: str
     thread_id: str = "hyperagent-main"
     model: str | None = None
     images: list[str] = []
+    files: list[FileItem] = []
 
 
 class ChatResponse(BaseModel):
@@ -30,7 +39,13 @@ class ThreadResponse(BaseModel):
 @router.post("/chat")
 def chat(request: ChatRequest) -> ChatResponse:
     """Send a message to a specific agent thread and get a reply."""
-    reply = run_agent(request.message, thread_id=request.thread_id, model=request.model, images=request.images or None)
+    reply = run_agent(
+        request.message,
+        thread_id=request.thread_id,
+        model=request.model,
+        images=request.images or None,
+        files=[f.model_dump() for f in request.files] if request.files else None,
+    )
     return ChatResponse(reply=reply)
 
 
@@ -44,7 +59,7 @@ async def chat_stream(request: ChatRequest):
     - ``{"type": "done"}`` — the agent has finished
     """
     return StreamingResponse(
-        stream_agent(request.message, thread_id=request.thread_id, model=request.model, images=request.images or None),
+        stream_agent(request.message, thread_id=request.thread_id, model=request.model, images=request.images or None, files=[f.model_dump() for f in request.files] if request.files else None),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

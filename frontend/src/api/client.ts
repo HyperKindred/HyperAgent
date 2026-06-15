@@ -6,11 +6,18 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+export interface FilePayload {
+  name: string
+  content: string  // base64-encoded content
+  mime: string
+}
+
 /** Send a chat message and get the agent's reply. */
 export async function sendChat(
   message: string,
   threadId?: string,
   images?: string[],
+  files?: FilePayload[],
 ): Promise<string> {
   const payload: Record<string, any> = { message }
   if (threadId) {
@@ -18,6 +25,9 @@ export async function sendChat(
   }
   if (images && images.length > 0) {
     payload.images = images
+  }
+  if (files && files.length > 0) {
+    payload.files = files
   }
   const { data } = await api.post('/chat', payload)
   return data.reply
@@ -73,10 +83,12 @@ export async function* sendChatStream(
   message: string,
   threadId?: string,
   images?: string[],
+  files?: FilePayload[],
 ): AsyncGenerator<string> {
   const payload: Record<string, any> = { message }
   if (threadId) payload.thread_id = threadId
   if (images && images.length > 0) payload.images = images
+  if (files && files.length > 0) payload.files = files
 
   const response = await fetch('/api/chat/stream', {
     method: 'POST',

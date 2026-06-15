@@ -8,11 +8,14 @@ const input = ref('')
 const loading = ref(false)
 const chatContainer = ref<HTMLDivElement | null>(null)
 const pendingImages = ref<string[]>([])
+const pendingFiles = ref<{ name: string; content: string; mime: string }[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 
 const MAX_IMAGES = 3
-const MAX_IMAGE_SIZE_MB = 5
-const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const MAX_FILE_SIZE_MB = 5
+const MAX_FILES = 5
+// Single accept string covering all supported types — images + documents
+const ACCEPT_ALL = '.png,.jpg,.jpeg,.webp,.pdf,.docx,.doc,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.yaml,.yml,.xml,.ini,.cfg,.log,.sh,.bat,.env'
 
 onMounted(() => {
   initWelcomeMessage()
@@ -23,6 +26,7 @@ async function handleNewChat() {
   await clearChat()
   initWelcomeMessage()
   pendingImages.value = []
+  pendingFiles.value = []
   await nextTick()
   scrollToBottom()
 }
@@ -62,13 +66,27 @@ async function handleFileSelect(e: Event) {
   const files = (e.target as HTMLInputElement).files
   if (!files) return
   for (const file of Array.from(files)) {
-    if (!ACCEPTED_TYPES.includes(file.type)) continue
-    if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) continue
-    if (pendingImages.value.length >= MAX_IMAGES) break
-    try {
-      const b64 = await compressImage(file)
-      pendingImages.value.push(b64)
-    } catch { /* skip failed images */ }
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      alert(`文件 "${file.name}" 超过 ${MAX_FILE_SIZE_MB}MB，已跳过`)
+      continue
+    }
+    if (file.type.startsWith('image/')) {
+      if (pendingImages.value.length >= MAX_IMAGES) break
+      try {
+        const b64 = await compressImage(file)
+        pendingImages.value.push(b64)
+      } catch { /* skip failed images */ }
+    } else {
+      if (pendingFiles.value.length >= MAX_FILES) {
+        alert(`最多同时上传 ${MAX_FILES} 个文件`)
+        break
+      }
+      try {
+        const dataUrl = await readFileAsBase64(file)
+        const content = dataUrl.split(',')[1] || dataUrl
+        pendingFiles.value.push({ name: file.name, content, mime: file.type })
+      } catch { /* skip failed files */ }
+    }
   }
   if (fileInput.value) fileInput.value.value = ''
 }
@@ -81,7 +99,7 @@ function handlePaste(e: ClipboardEvent) {
       e.preventDefault()
       const file = item.getAsFile()
       if (!file) continue
-      if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) continue
+      if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) continue
       if (pendingImages.value.length >= MAX_IMAGES) break
       compressImage(file).then(b64 => {
         if (pendingImages.value.length < MAX_IMAGES) {
@@ -96,20 +114,56 @@ function removePendingImage(index: number) {
   pendingImages.value.splice(index, 1)
 }
 
+// ── File upload ──────────────────────────────────────────────────
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Read failed'))
+    reader.onload = () => resolve(reader.result as string)
+    reader.readAsDataURL(file)
+  })
+}
+
+function removePendingFile(index: number) {
+  pendingFiles.value.splice(index, 1)
+}
+
+function getFileIcon(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'pdf': return '📕'
+    case 'docx':
+    case 'doc': return '📘'
+    case 'txt':
+    case 'md': return '📄'
+    case 'py':
+    case 'js':
+    case 'ts':
+    case 'json':
+    case 'css':
+    case 'html': return '📝'
+    default: return '📎'
+  }
+}
+
 async function handleSend() {
   const text = input.value.trim()
   const hasImages = pendingImages.value.length > 0
-  if ((!text && !hasImages) || loading.value) return
+  const hasFiles = pendingFiles.value.length > 0
+  if ((!text && !hasImages && !hasFiles) || loading.value) return
 
   const imagesToSend = hasImages ? [...pendingImages.value] : undefined
+  const filesToSend = hasFiles ? [...pendingFiles.value] : undefined
 
   chatStore.messages.push({
     role: 'user',
     content: text,
     images: imagesToSend,
+    files: filesToSend,
   })
   input.value = ''
   pendingImages.value = []
+  pendingFiles.value = []
   loading.value = true
 
   await nextTick()
@@ -122,7 +176,7 @@ async function handleSend() {
   scrollToBottom()
 
   try {
-    for await (const token of sendChatStream(text, chatStore.threadId, imagesToSend)) {
+    for await (const token of sendChatStream(text, chatStore.threadId, imagesToSend, filesToSend)) {
       chatStore.messages[msgIndex].content += token
       await nextTick()
       scrollToBottom()
@@ -182,6 +236,16 @@ function renderMarkdown(text: string): string {
           <div v-else-if="msg.hasImages" class="message-images">
             <div class="img-placeholder">🖼️ <span>图片</span></div>
           </div>
+          <div v-if="msg.fileInfo && msg.fileInfo.length > 0" class="message-files">
+            <div v-for="(f, j) in msg.fileInfo" :key="'fi'+j" class="file-badge">
+              {{ getFileIcon(f.name) }} <span>{{ f.name }}</span>
+            </div>
+          </div>
+          <div v-else-if="msg.files && msg.files.length > 0" class="message-files">
+            <div v-for="(f, j) in msg.files" :key="'ff'+j" class="file-badge">
+              {{ getFileIcon(f.name) }} <span>{{ f.name }}</span>
+            </div>
+          </div>
           <div class="message-content" :class="{ 'cursor-blink': loading && i === chatStore.messages.length - 1 && msg.content }">
             <div v-if="loading && i === chatStore.messages.length - 1 && !msg.content" class="typing-indicator">
               <span></span><span></span><span></span>
@@ -201,10 +265,19 @@ function renderMarkdown(text: string): string {
       <span class="pending-hint">{{ pendingImages.length }}/{{ MAX_IMAGES }}</span>
     </div>
 
+    <div class="pending-files" v-if="pendingFiles.length > 0">
+      <div v-for="(f, i) in pendingFiles" :key="'pf'+i" class="pending-file-item">
+        <span class="file-item-icon">{{ getFileIcon(f.name) }}</span>
+        <span class="file-item-name">{{ f.name }}</span>
+        <button class="remove-img" @click="removePendingFile(i)" title="移除">&times;</button>
+      </div>
+    </div>
+
     <div class="chat-input-area">
-      <label class="upload-btn" title="上传图片（或 Ctrl+V 粘贴）">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        <input type="file" ref="fileInput" :accept="ACCEPTED_TYPES.join(',')" multiple hidden @change="handleFileSelect" />
+      <label class="upload-btn" title="上传文件或图片（支持 PDF / Word / TXT / 图片 / 代码等）">
+        <!-- paperclip icon -->
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        <input type="file" ref="fileInput" :accept="ACCEPT_ALL" multiple hidden @change="handleFileSelect" />
       </label>
       <textarea
         v-model="input"
@@ -406,6 +479,65 @@ function renderMarkdown(text: string): string {
   font-size: 12px;
   color: #999;
   margin-left: 4px;
+}
+
+/* ── Pending files ──────────────────────────────────────────── */
+.pending-files {
+  display: flex;
+  gap: 8px;
+  padding: 6px 28px 0;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.pending-file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #f0f1f5;
+  border-radius: 6px;
+  font-size: 13px;
+  position: relative;
+}
+
+.file-item-icon {
+  font-size: 16px;
+}
+
+.file-item-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #555;
+}
+
+/* ── File badges in message history ─────────────────────────── */
+.message-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: #eef0f4;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+.file-badge span {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-input-area {
