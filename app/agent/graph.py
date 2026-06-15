@@ -114,11 +114,7 @@ def run_agent(
             text_parts.insert(0, f"用户上传了以下文件，内容如下：\n{_parse_uploaded_files(files)}")  # type: ignore[arg-type]
         content: list[dict] = [{"type": "text", "text": "\n\n".join(text_parts)}]
         for img_b64 in images:
-            # 兼容前端 toDataURL() 返回的完整 data URL 和纯 base64
-            if img_b64.startswith("data:image/"):
-                img_url = img_b64
-            else:
-                img_url = f"data:image/jpeg;base64,{img_b64}"
+            img_url = _clean_image_url(img_b64)
             content.append({
                 "type": "image_url",
                 "image_url": {"url": img_url}
@@ -172,10 +168,7 @@ async def stream_agent(
                 text_parts.insert(0, f"用户上传了以下文件，内容如下：\n{_parse_uploaded_files(files)}")  # type: ignore[arg-type]
             content = [{"type": "text", "text": "\n\n".join(text_parts)}]
             for img_b64 in images:
-                if img_b64.startswith("data:image/"):
-                    img_url = img_b64
-                else:
-                    img_url = f"data:image/jpeg;base64,{img_b64}"
+                img_url = _clean_image_url(img_b64)
                 content.append({
                     "type": "image_url",
                     "image_url": {"url": img_url}
@@ -212,6 +205,32 @@ async def stream_agent(
 # ── internal helpers ────────────────────────────────────────────────
 
 _MAX_FILE_CHARS = MAX_FILE_CHARS  # re-export for consistency
+
+
+def _clean_image_url(raw: str) -> str:
+    """Normalize a user-supplied image to a valid data URL.
+
+    Handles three cases:
+    1. Plain base64 string  →  ``data:image/jpeg;base64,<raw>``
+    2. Proper data URL      →  used as-is
+    3. Double-encoded URL   →  strips inner ``data:image/...;base64,``
+       (known Electron / clipboard quirk)
+    """
+    # Case 3: the base64 portion itself starts with a data-URL — strip
+    # e.g. "data:image/png;base64,data:image/png;base64,ABC..."
+    if ";base64," in raw:
+        prefix, _, rest = raw.partition(";base64,")
+        while rest.startswith("data:"):
+            if ";base64," in rest:
+                _, _, rest = rest.partition(";base64,")
+            else:
+                break
+        return prefix + ";base64," + rest
+    # Case 2: already a proper data URL
+    if raw.startswith("data:image/"):
+        return raw
+    # Case 1: plain base64
+    return f"data:image/jpeg;base64,{raw}"
 
 
 def _parse_uploaded_files(files: list[dict[str, Any]]) -> str:
