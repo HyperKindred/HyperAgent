@@ -69,7 +69,8 @@ function handleKeydown(e: KeyboardEvent) {
 
 /** Simple markdown-like rendering */
 function renderMarkdown(text: string): string {
-  return marked.parse(text, { breaks: true })
+  const html = marked.parse(text, { breaks: true })
+  return typeof html === 'string' ? html : ''
 }
 </script>
 
@@ -92,19 +93,15 @@ function renderMarkdown(text: string): string {
         <div class="message-avatar">
           {{ msg.role === 'user' ? '👤' : '🤖' }}
         </div>
-        <div class="message-body">
-          <div class="message-content" :class="{ streaming: loading && i === chatStore.messages.length - 1 }" v-html="renderMarkdown(msg.content)" />
-        </div>
-      </div>
-
-      <div v-if="loading && chatStore.messages.length > 0 && chatStore.messages[chatStore.messages.length - 1].content === ''" class="message assistant">
-        <div class="message-avatar">🤖</div>
-        <div class="message-body">
-          <div class="typing-indicator">
-            <span></span><span></span><span></span>
+    <div class="message-body">
+          <div class="message-content" :class="{ 'cursor-blink': loading && i === chatStore.messages.length - 1 && msg.content }">
+            <div v-if="loading && i === chatStore.messages.length - 1 && !msg.content" class="typing-indicator">
+              <span></span><span></span><span></span>
+            </div>
+            <div v-else v-html="renderMarkdown(msg.content)" />
           </div>
-        </div>
-      </div>
+    </div>
+    </div>
 
     </div>
 
@@ -308,7 +305,7 @@ function renderMarkdown(text: string): string {
 .message-content p { margin: 4px 0; }
 .message-content strong { font-weight: 600; }
 
-.message-content.streaming::after {
+.message-content.cursor-blink::after {
   content: "|";
   animation: blink 0.8s step-end infinite;
   color: #6366f1;

@@ -22,8 +22,9 @@ export const chatStore = reactive<ChatStore>({
 
 // 每次消息变化自动保存到 localStorage
 watch(
-  () => chatStore.messages.length,
+  () => chatStore.messages,
   () => saveMessages(chatStore.messages),
+  { deep: true },
 )
 
 /** 仅在首次挂载时注入欢迎消息 */

@@ -10,16 +10,25 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # DeepSeek / LLM
-    # DeepSeek API — used for embeddings (kept separate)
+    # Search
+    search_engine_url: str = ""
+
+    # DeepSeek API — legacy, kept for backward compatibility
+    # (embedding_* settings below take precedence)
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"
 
-    # One API / OpenRouter — unified LLM gateway, OpenAI-compatible
-    llm_base_url: str = "https://api.deepseek.com/v1"
+    # Embedding API — OpenAI-compatible embedding endpoint.
+    # Defaults to DeepSeek if not overridden.
+    embedding_base_url: str = "https://api.deepseek.com/v1"
+    embedding_api_key: str = ""
+    embedding_model: str = "deepseek-embedding"
+
+    # LLM API — OpenAI-compatible chat gateway
+    llm_base_url: str = ""
     llm_api_key: str = ""
-    llm_model: str = "deepseek-chat"
+    llm_model: str = "deepseek-v4-flash"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
 

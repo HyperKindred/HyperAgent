@@ -6,6 +6,7 @@ search instead of keyword matching.
 
 from __future__ import annotations
 
+import logging
 import json
 import time
 from typing import TYPE_CHECKING
@@ -13,6 +14,8 @@ from typing import TYPE_CHECKING
 import requests
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.memory.models import Memory
@@ -47,13 +50,17 @@ def get_embedding(
 
     for attempt in range(max_retries):
         try:
+            api_key = settings.embedding_api_key or settings.deepseek_api_key
+            if not api_key:
+                logger.error("No API key configured for embeddings (embedding_api_key or deepseek_api_key)")
+                return None
             resp = session.post(
-                f"{settings.deepseek_base_url}/embeddings",
+                f"{settings.embedding_base_url}/embeddings",
                 headers={
-                    "Authorization": f"Bearer {settings.deepseek_api_key}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json={"model": "deepseek-embedding", "input": text},
+                json={"model": settings.embedding_model, "input": text},
                 timeout=timeout,
             )
             resp.raise_for_status()

@@ -147,11 +147,26 @@ def _trim_if_needed(agent, config: dict) -> None:
     if len(messages) <= max_msgs:
         return
 
-    # 计算需要删除的消息数量
     excess = len(messages) - max_msgs
-    to_remove = messages[:excess]
+    # Collect tool_call IDs from messages we are about to remove.
+    removed_tc_ids: set[str] = set()
+    for msg in messages[:excess]:
+        tcs = getattr(msg, "tool_calls", None)
+        if tcs:
+            for tc in tcs:
+                tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                if tc_id:
+                    removed_tc_ids.add(tc_id)
 
-    # 用 RemoveMessage 删除旧消息（兼容 add_messages reducer）
+    to_remove = messages[:excess]
+    # Extend removal: also remove tool responses whose parent AI message
+    # with tool_calls was just removed (prevents orphaned tool messages).
+    for msg in messages[excess:]:
+        if getattr(msg, "type", "") == "tool":
+            tc_id = getattr(msg, "tool_call_id", None)
+            if tc_id and tc_id in removed_tc_ids:
+                to_remove.append(msg)
+
     removals = [RemoveMessage(id=m.id) for m in to_remove]
     agent.update_state(config, {"messages": removals})
 
