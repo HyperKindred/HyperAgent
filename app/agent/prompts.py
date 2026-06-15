@@ -61,6 +61,8 @@ def get_system_prompt(_state=None) -> str:
   - 用户可能在日历页面直接修改了日程
   - 对话记忆中的日程信息可能已过期
 ▸ 添加/安排日程 → create_event_tool
+  • 如果用户需要到时提醒，传入 remind=True（会自动创建关联提醒）
+  • 不用手动再用 create_reminder_tool 创建提醒，create_event_tool 已自带提醒功能
 ▸ 修改/改时间/推迟 → update_event_tool
 ▸ 删除/取消日程 → delete_event_tool
 ▸ 清除过期日程 → clear_expired_events_tool
@@ -116,6 +118,9 @@ def get_system_prompt(_state=None) -> str:
   • 支持中文相对时间（X分钟后、明天X点、后天早上X点等）
   • 周期性提醒：用户说"每天上午9点提醒我站会" → 添加 recurring 参数
   • 创建后告知用户 ID 和触发时间
+  • ⚠️ **注意区分**：如果用户说的是"安排日程""加日程"并需要提醒，
+    应该用 create_event_tool(remind=True) 而不是 create_reminder_tool。
+    create_reminder_tool 只用于纯提醒（不需要记在日程上的）。
 
 ▸ **查看提醒** → 当用户问"有什么提醒""查看我的提醒"时：
   • 用 list_reminders_tool() 列出所有提醒
@@ -123,8 +128,6 @@ def get_system_prompt(_state=None) -> str:
 
 ▸ **删除提醒** → 用户说"取消提醒""删除提醒""不提醒了"：
   • 先用 list_reminders_tool 找到提醒 ID，再用 delete_reminder_tool 删除
-
-▸ **与日程联动**：create_event_tool 有 remind 参数，创建日程时可顺带创建提醒。
 
 【操作确认】
 - 日程操作后给出清晰确认（含 ID 和具体时间）
