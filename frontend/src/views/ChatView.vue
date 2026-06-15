@@ -229,7 +229,9 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 function renderMarkdown(text: string): string {
-  const html = marked.parse(text, { breaks: true })
+  // Escape `---` horizontal rules so they don't create intrusive <hr> lines
+  const safe = text.replace(/\n---+\n/g, '\n——\n')
+  const html = marked.parse(safe, { breaks: true })
   return typeof html === 'string' ? html : ''
 }
 
