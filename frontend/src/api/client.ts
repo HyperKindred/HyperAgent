@@ -71,6 +71,26 @@ export async function fetchEvents(date?: string): Promise<EventItem[]> {
   return data
 }
 
+/** List events for a month (YYYY-MM). */
+export async function fetchEventsByMonth(month: string): Promise<EventItem[]> {
+  const { data } = await api.get('/events', { params: { month } })
+  return data
+}
+
+export interface ReminderItem {
+  id: number
+  title: string
+  description: string
+  trigger_at: string
+  status: string
+  event_id: number | null
+}
+
+export async function fetchReminders(): Promise<ReminderItem[]> {
+  const { data } = await api.get('/reminders')
+  return data
+}
+
 /** Create an event directly (bypass LLM agent). */
 export async function createEvent(payload: {
   title: string

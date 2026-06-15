@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { fetchEvents, deleteEvent, createEvent, type EventItem } from '../api/client'
+import { ref, onMounted, computed, watch } from 'vue'
+import {
+  fetchEventsByMonth,
+  fetchEvents,
+  fetchReminders,
+  deleteEvent,
+  createEvent,
+  type EventItem,
+  type ReminderItem,
+} from '../api/client'
+import { CalendarDays, ChevronLeft, ChevronRight, Bell, Plus, X, Trash2 } from '@lucide/vue'
 
+// ── State ──────────────────────────────────────────────────────────
 const events = ref<EventItem[]>([])
+const reminders = ref<ReminderItem[]>([])
 const loading = ref(false)
+const currentMonth = ref(new Date().toISOString().slice(0, 7)) // YYYY-MM
 const selectedDate = ref(new Date().toISOString().slice(0, 10))
 const showAddForm = ref(false)
 const delConfirmId = ref<number | null>(null)
@@ -16,34 +28,91 @@ const newDesc = ref('')
 const newPriority = ref('normal')
 const addError = ref('')
 
-const priorityLabel = (p: string) =>
-  ({ low: '🟢 低', normal: '🟡 普通', high: '🔴 高' } as Record<string, string>)[p] || p
+// ── Helpers ────────────────────────────────────────────────────────
+const weekdays = ['日', '一', '二', '三', '四', '五', '六']
 
-const statusLabel = (s: string) =>
-  ({ pending: '⏳ 待办', completed: '✅ 完成', cancelled: '❌ 取消' } as Record<string, string>)[s] || s
-
-const priorityClass = (p: string) => `priority-${p}`
-
-const groupedEvents = computed(() => {
-  const groups: Record<string, EventItem[]> = {}
-  for (const e of events.value) {
-    const t = e.start_time.slice(11, 16)
-    if (!groups[t]) groups[t] = []
-    groups[t].push(e)
-  }
-  return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b))
+const yearLabel = computed(() => {
+  const [y, m] = currentMonth.value.split('-').map(Number)
+  return `${y}年${m}月`
 })
 
-async function loadEvents() {
+/** Days in the current month with leading blanks for the first weekday. */
+const calendarDays = computed(() => {
+  const [y, m] = currentMonth.value.split('-').map(Number)
+  const first = new Date(y, m - 1, 1)
+  const last = new Date(y, m, 0)
+  const startDow = first.getDay() // 0=Sun
+  const days: (number | null)[] = Array(startDow).fill(null)
+  for (let d = 1; d <= last.getDate(); d++) days.push(d)
+  return days
+})
+
+/** Set of date strings (YYYY-MM-DD) that have events. */
+const eventDates = computed(() => {
+  const s = new Set<string>()
+  for (const e of events.value) {
+    s.add(e.start_time.slice(0, 10))
+  }
+  return s
+})
+
+/** Reminders keyed by event_id. */
+const reminderByEventId = computed(() => {
+  const m = new Map<number, ReminderItem>()
+  for (const r of reminders.value) {
+    if (r.event_id != null && r.status === 'pending') m.set(r.event_id, r)
+  }
+  return m
+})
+
+const dayEvents = computed(() =>
+  events.value.filter(e => e.start_time.startsWith(selectedDate.value))
+)
+
+// ── Data loading ───────────────────────────────────────────────────
+async function loadMonth() {
   loading.value = true
   try {
-    events.value = await fetchEvents(selectedDate.value)
+    const [evts, rems] = await Promise.all([
+      fetchEventsByMonth(currentMonth.value),
+      fetchReminders(),
+    ])
+    events.value = evts
+    reminders.value = rems
   } catch {
     events.value = []
+    reminders.value = []
   } finally {
     loading.value = false
   }
 }
+
+function goMonth(delta: number) {
+  const [y, m] = currentMonth.value.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  currentMonth.value = d.toISOString().slice(0, 7)
+}
+
+function selectDay(day: number | null) {
+  if (day == null) return
+  const [y, m] = currentMonth.value.split('-').map(Number)
+  selectedDate.value = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+function isToday(day: number | null) {
+  if (day == null) return false
+  const today = new Date().toISOString().slice(0, 10)
+  const [y, m] = currentMonth.value.split('-').map(Number)
+  return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}` === today
+}
+
+function isSelected(day: number | null) {
+  if (day == null) return false
+  const [y, m] = currentMonth.value.split('-').map(Number)
+  return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}` === selectedDate.value
+}
+
+// ── CRUD ───────────────────────────────────────────────────────────
 
 async function handleDelete(id: number) {
   try {
@@ -75,298 +144,462 @@ async function handleAdd() {
     newEndTime.value = ''
     newDesc.value = ''
     newPriority.value = 'normal'
-    await loadEvents()
+    await loadMonth()
   } catch {}
 }
 
-onMounted(loadEvents)
+const priorityLabel = (p: string) =>
+  ({ low: '低', normal: '普通', high: '高' } as Record<string, string>)[p] || p
+const statusLabel = (s: string) =>
+  ({ pending: '待办', completed: '完成', cancelled: '取消' } as Record<string, string>)[s] || s
+
+onMounted(loadMonth)
+watch(currentMonth, loadMonth)
 </script>
 
 <template>
   <div class="calendar-page">
-    <div class="calendar-header">
-      <h2>📅 日程</h2>
-      <div class="header-actions">
-        <input
-          type="date"
-          v-model="selectedDate"
-          class="date-picker"
-          @change="loadEvents"
-        />
-        <button class="btn-add" @click="showAddForm = !showAddForm">
-          {{ showAddForm ? '取消' : '+ 添加日程' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Quick add form -->
-    <div v-if="showAddForm" class="add-form">
-      <div class="form-row">
-        <input
-          v-model="newTitle"
-          class="form-input full"
-          placeholder="标题（例如：部门周会）"
-          @keyup.enter="handleAdd"
-        />
-      </div>
-      <div class="form-row inline">
-        <input v-model="newTime" type="time" class="form-input" />
-        <span class="form-sep">→</span>
-        <input v-model="newEndTime" type="time" class="form-input" placeholder="结束时间（可选）" />
-        <select v-model="newPriority" class="form-input">
-          <option value="low">🟢 低</option>
-          <option value="normal">🟡 普通</option>
-          <option value="high">🔴 高</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <input v-model="newDesc" class="form-input full" placeholder="描述（可选）" />
-      </div>
-      <div v-if="addError" class="form-error">{{ addError }}</div>
-      <button class="btn-primary" @click="handleAdd">确认添加</button>
-    </div>
-
-    <!-- Event list -->
-    <div class="event-list" v-if="events.length > 0">
-      <div
-        v-for="[timeSlot, items] in groupedEvents"
-        :key="timeSlot"
-        class="time-group"
-      >
-        <div class="time-label">{{ timeSlot }}</div>
-        <div
-          v-for="event in items"
-          :key="event.id"
-          class="event-card"
-          :class="priorityClass(event.priority)"
-        >
-          <div class="event-main">
-            <div class="event-title">{{ event.title }}</div>
-            <div class="event-meta">
-              <span class="event-status">{{ statusLabel(event.status) }}</span>
-              <span class="event-priority">{{ priorityLabel(event.priority) }}</span>
-            </div>
-            <div v-if="event.description" class="event-desc">{{ event.description }}</div>
+    <div class="calendar-layout">
+      <!-- ── Left: Calendar grid ── -->
+      <div class="calendar-panel">
+        <div class="month-header">
+          <h2 class="month-title">
+            <CalendarDays :size="22" />
+            {{ yearLabel }}
+          </h2>
+          <div class="month-nav">
+            <button class="nav-btn" @click="goMonth(-1)" title="上个月"><ChevronLeft :size="20" /></button>
+            <button class="nav-btn" @click="currentMonth = new Date().toISOString().slice(0, 7)" title="今天">今天</button>
+            <button class="nav-btn" @click="goMonth(1)" title="下个月"><ChevronRight :size="20" /></button>
           </div>
-          <button
-            class="event-delete"
-            :title="delConfirmId === event.id ? '再次点击确认删除' : '删除'"
-            @click="delConfirmId === event.id ? handleDelete(event.id) : (delConfirmId = event.id)"
+        </div>
+
+        <div class="weekday-row">
+          <div v-for="d in weekdays" :key="d" class="weekday-cell">{{ d }}</div>
+        </div>
+
+        <div class="days-grid">
+          <div
+            v-for="(day, i) in calendarDays"
+            :key="i"
+            class="day-cell"
+            :class="{
+              'day-empty': day === null,
+              'day-today': isToday(day),
+              'day-selected': isSelected(day),
+              'day-has-event': day !== null && eventDates.has(
+                currentMonth.slice(0, 4) + '-' +
+                currentMonth.slice(5, 7) + '-' +
+                String(day).padStart(2, '0')
+              ),
+            }"
+            @click="selectDay(day)"
           >
-            {{ delConfirmId === event.id ? '确认删除？' : '🗑️' }}
-          </button>
+            <span class="day-num">{{ day ?? '' }}</span>
+          </div>
+        </div>
+
+        <!-- Add button -->
+        <button class="add-btn" @click="showAddForm = !showAddForm">
+          <Plus :size="18" />
+          {{ showAddForm ? '取消' : '添加日程' }}
+        </button>
+
+        <!-- Quick add form -->
+        <div v-if="showAddForm" class="add-form" @click.stop>
+          <div class="form-row">
+            <input v-model="newTitle" class="form-input full" placeholder="标题" @keyup.enter="handleAdd" />
+          </div>
+          <div class="form-row inline">
+            <input v-model="newTime" type="time" class="form-input" />
+            <span class="form-sep">→</span>
+            <input v-model="newEndTime" type="time" class="form-input" placeholder="结束" />
+            <select v-model="newPriority" class="form-input">
+              <option value="low">低</option>
+              <option value="normal">普通</option>
+              <option value="high">高</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <input v-model="newDesc" class="form-input full" placeholder="描述（可选）" />
+          </div>
+          <div v-if="addError" class="form-error">{{ addError }}</div>
+          <button class="btn-primary" @click="handleAdd">确认</button>
         </div>
       </div>
-    </div>
 
-    <div v-else-if="!loading" class="empty-state">
-      <div class="empty-icon">📭</div>
-      <p>{{ selectedDate }} 没有日程安排</p>
-      <p class="empty-hint">可以在这个页面直接添加日程，或去对话页告诉 Agent</p>
+      <!-- ── Right: Events for selected day ── -->
+      <div class="events-panel">
+        <div class="events-panel-header">
+          <h3>{{ selectedDate }}</h3>
+        </div>
+
+        <div v-if="dayEvents.length > 0" class="events-list">
+          <div
+            v-for="event in dayEvents"
+            :key="event.id"
+            class="event-card"
+            :class="'priority-' + event.priority"
+          >
+            <div class="event-left">
+              <div class="event-time">{{ event.start_time.slice(11, 16) }}</div>
+              <div v-if="event.end_time" class="event-time end">
+                {{ event.end_time.slice(11, 16) }}
+              </div>
+            </div>
+            <div class="event-main">
+              <div class="event-title-row">
+                <span class="event-title">{{ event.title }}</span>
+                <span v-if="reminderByEventId.has(event.id)" class="reminder-badge" title="已设置提醒">
+                  <Bell :size="14" />
+                </span>
+              </div>
+              <div class="event-meta">
+                <span class="event-priority" :class="'prio-' + event.priority">
+                  {{ priorityLabel(event.priority) }}
+                </span>
+                <span class="event-status">{{ statusLabel(event.status) }}</span>
+              </div>
+              <div v-if="event.description" class="event-desc">{{ event.description }}</div>
+            </div>
+            <button
+              class="event-delete"
+              :title="delConfirmId === event.id ? '再次点击确认删除' : '删除'"
+              @click="delConfirmId === event.id ? handleDelete(event.id) : (delConfirmId = event.id)"
+            >
+              <Trash2 v-if="delConfirmId !== event.id" :size="16" />
+              <span v-else class="confirm-text">确认？</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-else class="empty-state">
+          <div class="empty-icon">📭</div>
+          <p>没有日程安排</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .calendar-page {
-  padding: 24px 28px;
   height: 100vh;
-  overflow-y: auto;
   background: #fff;
+  overflow: hidden;
 }
 
-.calendar-header {
+.calendar-layout {
+  display: flex;
+  height: 100%;
+}
+
+/* ── Left calendar panel ─────────────────────────────────────────── */
+.calendar-panel {
+  width: 380px;
+  flex-shrink: 0;
+  border-right: 1px solid #eef0f4;
+  padding: 24px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.month-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
-.calendar-header h2 {
-  margin: 0;
-  font-size: 20px;
+.month-title {
+  font-size: 18px;
   font-weight: 600;
+  color: #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
 }
 
-.header-actions {
+.month-nav {
   display: flex;
-  gap: 12px;
+  gap: 4px;
   align-items: center;
 }
 
-.date-picker {
-  padding: 8px 12px;
-  border: 1px solid #e0e3e8;
+.nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #6b7280;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.nav-btn:hover {
+  background: #f3f4f6;
+  color: #6366f1;
+  border-color: #c7d2fe;
+}
+
+.weekday-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+
+.weekday-cell {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9ca3af;
+  padding: 6px 0;
+}
+
+.days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.day-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 8px;
+  cursor: pointer;
   font-size: 14px;
+  transition: all 0.12s;
+  position: relative;
+}
+
+.day-cell:hover:not(.day-empty) {
+  background: #f3f4f6;
+}
+
+.day-num {
+  z-index: 1;
+}
+
+.day-empty {
+  cursor: default;
+}
+
+.day-today .day-num {
+  color: #6366f1;
+  font-weight: 700;
+}
+
+.day-selected {
+  background: #059669 !important;
+  color: #fff;
+  font-weight: 600;
+}
+
+.day-selected:hover {
+  background: #047857 !important;
+}
+
+.day-has-event .day-num::after {
+  content: '';
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #6366f1;
+}
+
+.day-selected .day-num::after {
+  background: #fff;
+}
+
+/* Add button */
+.add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  margin-top: 12px;
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.add-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f3ff;
+}
+
+/* Add form */
+.add-form {
+  margin-top: 12px;
+  padding: 14px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.form-row { margin-bottom: 8px; }
+.form-row.inline { display: flex; gap: 6px; align-items: center; }
+.form-input {
+  padding: 7px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
   font-family: inherit;
   outline: none;
 }
-
-.date-picker:focus {
-  border-color: #6366f1;
-}
-
-.btn-add {
-  padding: 8px 18px;
+.form-input:focus { border-color: #6366f1; }
+.form-input.full { width: 100%; box-sizing: border-box; }
+.form-sep { color: #9ca3af; font-size: 13px; }
+.form-error { color: #ef4444; font-size: 12px; margin-bottom: 6px; }
+.btn-primary {
+  width: 100%;
+  padding: 8px;
   background: #6366f1;
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s;
+}
+.btn-primary:hover { background: #4f46e5; }
+
+/* ── Right events panel ──────────────────────────────────────────── */
+.events-panel {
+  flex: 1;
+  padding: 24px 28px;
+  overflow-y: auto;
 }
 
-.btn-add:hover {
-  background: #4f46e5;
-}
-
-.add-form {
-  background: #f8f9fc;
-  border: 1px solid #e8ebf2;
-  border-radius: 12px;
-  padding: 16px;
+.events-panel-header {
   margin-bottom: 20px;
 }
 
-.form-row {
-  margin-bottom: 10px;
+.events-panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
 }
 
-.form-row.inline {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.form-input {
-  padding: 8px 12px;
-  border: 1px solid #dde0e6;
-  border-radius: 6px;
-  font-size: 14px;
-  font-family: inherit;
-  outline: none;
-}
-
-.form-input:focus {
-  border-color: #6366f1;
-}
-
-.form-input.full {
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.form-sep {
-  color: #999;
-  font-size: 14px;
-}
-
-.form-error {
-  color: #ef4444;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-
-.btn-primary {
-  padding: 8px 20px;
-  background: #22c55e;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.btn-primary:hover {
-  background: #16a34a;
-}
-
-.event-list {
+.events-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.time-group {
-  /* no extra styling needed */
-}
-
-.time-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #999;
-  margin-bottom: 6px;
-  padding-left: 4px;
+  gap: 8px;
 }
 
 .event-card {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  gap: 14px;
   padding: 14px 16px;
-  border-radius: 10px;
-  background: #fafbfd;
+  border-radius: 12px;
   border: 1px solid #eef1f6;
-  margin-bottom: 6px;
+  background: #fafbfd;
   transition: box-shadow 0.15s;
 }
 
 .event-card:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
 }
 
-.event-card.priority-high {
-  border-left: 3px solid #ef4444;
+.event-card.priority-high { border-left: 3px solid #ef4444; }
+.event-card.priority-normal { border-left: 3px solid #f59e0b; }
+.event-card.priority-low { border-left: 3px solid #63e29c; }
+
+.event-left {
+  flex-shrink: 0;
+  width: 48px;
+  text-align: center;
+  padding-top: 2px;
 }
 
-.event-card.priority-normal {
-  border-left: 3px solid #f59e0b;
+.event-time {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
 }
 
-.event-card.priority-low {
-  border-left: 3px solid #63e29c;
+.event-time.end {
+  font-size: 12px;
+  font-weight: 400;
+  color: #9ca3af;
+  margin-top: 2px;
 }
 
-.event-main {
-  flex: 1;
+.event-main { flex: 1; min-width: 0; }
+
+.event-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
 }
 
 .event-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1a1a2e;
-  margin-bottom: 6px;
+  color: #1f2937;
+}
+
+.reminder-badge {
+  display: inline-flex;
+  align-items: center;
+  color: #059669;
+  flex-shrink: 0;
 }
 
 .event-meta {
   display: flex;
-  gap: 12px;
-  margin-bottom: 4px;
+  gap: 10px;
+  margin-bottom: 2px;
 }
 
-.event-status,
-.event-priority {
+.event-priority,
+.event-status {
   font-size: 12px;
-  color: #888;
+  color: #9ca3af;
 }
+
+.event-priority.prio-high { color: #ef4444; }
+.event-priority.prio-normal { color: #f59e0b; }
+.event-priority.prio-low { color: #63e29c; }
 
 .event-desc {
   font-size: 13px;
-  color: #999;
+  color: #9ca3af;
   margin-top: 4px;
+  line-height: 1.4;
 }
 
 .event-delete {
+  flex-shrink: 0;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px 6px;
   border-radius: 6px;
-  font-size: 13px;
-  color: #999;
-  flex-shrink: 0;
+  color: #d1d5db;
+  transition: all 0.15s;
+  align-self: flex-start;
 }
 
 .event-delete:hover {
@@ -374,24 +607,19 @@ onMounted(loadEvents)
   color: #ef4444;
 }
 
+.confirm-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ef4444;
+  white-space: nowrap;
+}
+
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #999;
+  color: #9ca3af;
 }
 
-.empty-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-}
-
-.empty-state p {
-  margin: 4px 0;
-  font-size: 15px;
-}
-
-.empty-hint {
-  font-size: 13px !important;
-  color: #bbb;
-}
+.empty-icon { font-size: 40px; margin-bottom: 10px; }
+.empty-state p { margin: 4px 0; font-size: 14px; }
 </style>

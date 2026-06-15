@@ -1,6 +1,6 @@
 """Schedule REST endpoints – direct CRUD (bypasses LLM agent)."""
 
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 
@@ -13,14 +13,21 @@ repo = ScheduleRepository()
 
 
 @router.get("")
-def list_events(q: str | None = None, dt: date | None = None):
+def list_events(q: str | None = None, dt: date | None = None, month: str | None = None):
     if q:
         events = repo.search_events(q)
+    elif month:
+        # Parse YYYY-MM and get all events in that month
+        year, m = int(month[:4]), int(month[5:7])
+        start = date(year, m, 1)
+        if m == 12:
+            end = date(year + 1, 1, 1)
+        else:
+            end = date(year, m + 1, 1)
+        events = repo.list_events_by_date_range(start, end)
     elif dt:
         events = repo.list_events_by_date(dt)
     else:
-        from datetime import datetime
-
         now = datetime.now()
         events = repo.list_events_by_date(now.date())
     return [EventResponse.model_validate(e) for e in events]
