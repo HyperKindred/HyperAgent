@@ -160,50 +160,14 @@ watch(currentMonth, loadMonth)
 <template>
   <div class="calendar-page">
     <div class="calendar-layout">
-      <!-- ── Left: Calendar grid ── -->
-      <div class="calendar-panel">
-        <div class="month-header">
-          <h2 class="month-title">
-            <CalendarDays :size="22" />
-            {{ yearLabel }}
-          </h2>
-          <div class="month-nav">
-            <button class="nav-btn" @click="goMonth(-1)" title="上个月"><ChevronLeft :size="20" /></button>
-            <button class="nav-btn" @click="currentMonth = new Date().toISOString().slice(0, 7)" title="今天">今天</button>
-            <button class="nav-btn" @click="goMonth(1)" title="下个月"><ChevronRight :size="20" /></button>
-          </div>
+      <!-- ── Left: Events for selected day ── -->
+      <div class="events-panel">
+        <div class="events-panel-header">
+          <h3>{{ selectedDate }}</h3>
+          <button class="add-btn-icon" @click="showAddForm = !showAddForm" title="添加日程">
+            <Plus :size="20" />
+          </button>
         </div>
-
-        <div class="weekday-row">
-          <div v-for="d in weekdays" :key="d" class="weekday-cell">{{ d }}</div>
-        </div>
-
-        <div class="days-grid">
-          <div
-            v-for="(day, i) in calendarDays"
-            :key="i"
-            class="day-cell"
-            :class="{
-              'day-empty': day === null,
-              'day-today': isToday(day),
-              'day-selected': isSelected(day),
-              'day-has-event': day !== null && eventDates.has(
-                currentMonth.slice(0, 4) + '-' +
-                currentMonth.slice(5, 7) + '-' +
-                String(day).padStart(2, '0')
-              ),
-            }"
-            @click="selectDay(day)"
-          >
-            <span class="day-num">{{ day ?? '' }}</span>
-          </div>
-        </div>
-
-        <!-- Add button -->
-        <button class="add-btn" @click="showAddForm = !showAddForm">
-          <Plus :size="18" />
-          {{ showAddForm ? '取消' : '添加日程' }}
-        </button>
 
         <!-- Quick add form -->
         <div v-if="showAddForm" class="add-form" @click.stop>
@@ -226,13 +190,6 @@ watch(currentMonth, loadMonth)
           <div v-if="addError" class="form-error">{{ addError }}</div>
           <button class="btn-primary" @click="handleAdd">确认</button>
         </div>
-      </div>
-
-      <!-- ── Right: Events for selected day ── -->
-      <div class="events-panel">
-        <div class="events-panel-header">
-          <h3>{{ selectedDate }}</h3>
-        </div>
 
         <div v-if="dayEvents.length > 0" class="events-list">
           <div
@@ -240,6 +197,7 @@ watch(currentMonth, loadMonth)
             :key="event.id"
             class="event-card"
             :class="'priority-' + event.priority"
+          >
           >
             <div class="event-left">
               <div class="event-time">{{ event.start_time.slice(11, 16) }}</div>
@@ -278,6 +236,46 @@ watch(currentMonth, loadMonth)
           <p>没有日程安排</p>
         </div>
       </div>
+
+      <!-- ── Right: Calendar grid ── -->
+      <div class="calendar-panel">
+        <div class="month-header">
+          <h2 class="month-title">
+            <CalendarDays :size="22" />
+            {{ yearLabel }}
+          </h2>
+          <div class="month-nav">
+            <button class="nav-btn" @click="goMonth(-1)" title="上个月"><ChevronLeft :size="20" /></button>
+            <button class="nav-btn" @click="currentMonth = new Date().toISOString().slice(0, 7)" title="今天">今天</button>
+            <button class="nav-btn" @click="goMonth(1)" title="下个月"><ChevronRight :size="20" /></button>
+          </div>
+        </div>
+
+        <div class="weekday-row">
+          <div v-for="d in weekdays" :key="d" class="weekday-cell">{{ d }}</div>
+        </div>
+
+        <div class="days-grid">
+          <div
+            v-for="(day, i) in calendarDays"
+            :key="i"
+            class="day-cell"
+            :class="{
+              'day-empty': day === null,
+              'day-today': isToday(day),
+              'day-selected': isSelected(day),
+              'day-has-event': day !== null && eventDates.has(
+                currentMonth.slice(0, 4) + '-' +
+                currentMonth.slice(5, 7) + '-' +
+                String(day).padStart(2, '0')
+              ),
+            }"
+            @click="selectDay(day)"
+          >
+            <span class="day-num">{{ day ?? '' }}</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -294,16 +292,20 @@ watch(currentMonth, loadMonth)
   height: 100%;
 }
 
-/* ── Left calendar panel ─────────────────────────────────────────── */
+/* ── Right calendar panel ────────────────────────────────────────── */
 .calendar-panel {
-  width: 380px;
+  width: 360px;
   flex-shrink: 0;
-  border-right: 1px solid #eef0f4;
-  padding: 24px 20px;
+  padding: 20px;
+  margin: 20px;
+  border: 1px solid #eef0f4;
+  border-radius: 16px;
+  background: #fafbfd;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  align-self: flex-start;
 }
 
 .month-header {
@@ -424,30 +426,6 @@ watch(currentMonth, loadMonth)
   background: #fff;
 }
 
-/* Add button */
-.add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 10px;
-  margin-top: 12px;
-  border: 1px dashed #d1d5db;
-  border-radius: 10px;
-  background: transparent;
-  color: #6b7280;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.add-btn:hover {
-  border-color: #6366f1;
-  color: #6366f1;
-  background: #f5f3ff;
-}
-
 /* Add form */
 .add-form {
   margin-top: 12px;
@@ -486,11 +464,15 @@ watch(currentMonth, loadMonth)
 /* ── Right events panel ──────────────────────────────────────────── */
 .events-panel {
   flex: 1;
-  padding: 24px 28px;
+  padding: 28px 32px;
   overflow-y: auto;
+  min-width: 0;
 }
 
 .events-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
 }
 
@@ -499,6 +481,26 @@ watch(currentMonth, loadMonth)
   font-size: 16px;
   font-weight: 600;
   color: #374151;
+}
+
+.add-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.add-btn-icon:hover {
+  background: #f3f4f6;
+  color: #6366f1;
+  border-color: #c7d2fe;
 }
 
 .events-list {
