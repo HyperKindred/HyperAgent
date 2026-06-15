@@ -6,6 +6,19 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+/** Combine two AbortSignals into one — aborts when either signal aborts. */
+function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController()
+  for (const sig of signals) {
+    if (sig.aborted) {
+      controller.abort(sig.reason)
+      return controller.signal
+    }
+    sig.addEventListener('abort', () => controller.abort(sig.reason), { once: true })
+  }
+  return controller.signal
+}
+
 export interface FilePayload {
   name: string
   content: string  // base64-encoded content
@@ -84,6 +97,7 @@ export async function* sendChatStream(
   threadId?: string,
   images?: string[],
   files?: FilePayload[],
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const payload: Record<string, any> = { message }
   if (threadId) payload.thread_id = threadId
@@ -94,13 +108,18 @@ export async function* sendChatStream(
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 120_000)
 
+  // Merge external signal with internal timeout
+  const combinedSignal = signal
+    ? combineAbortSignals(signal, controller.signal)
+    : controller.signal
+
   let response: Response
   try {
     response = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: controller.signal,
+      signal: combinedSignal,
     })
   } finally {
     clearTimeout(timeoutId)

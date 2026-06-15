@@ -3,10 +3,11 @@ import { ref, nextTick, onMounted, computed } from 'vue'
 import { marked } from 'marked'
 import { sendChatStream } from '../api/client'
 import { chatStore, initWelcomeMessage, clearChat } from '../store/chat'
-import { MessageSquare, Plus, Send, Paperclip, FileText, Code, File, X, Image as ImageIcon } from '@lucide/vue'
+import { MessageSquare, Plus, Send, Square, Paperclip, FileText, Code, File, X, Image as ImageIcon } from '@lucide/vue'
 
 const input = ref('')
 const loading = ref(false)
+const abortRef = ref<AbortController | null>(null)
 const chatContainer = ref<HTMLDivElement | null>(null)
 const pendingImages = ref<string[]>([])
 const pendingFiles = ref<{ name: string; content: string; mime: string }[]>([])
@@ -180,13 +181,19 @@ async function handleSend() {
   await nextTick()
   scrollToBottom()
 
+  // Create a new AbortController for this request
+  const controller = new AbortController()
+  abortRef.value = controller
+
   try {
-    for await (const token of sendChatStream(text, chatStore.threadId, imagesToSend, filesToSend)) {
+    for await (const token of sendChatStream(text, chatStore.threadId, imagesToSend, filesToSend, controller.signal)) {
       chatStore.messages[msgIndex].content += token
       await nextTick()
       scrollToBottom()
     }
   } catch (e: any) {
+    // Ignore abort errors (user clicked stop)
+    if (e.name === 'AbortError') return
     const msg = e.message || ''
     if (msg.includes('abort') || msg.includes('timed out')) {
       chatStore.messages[msgIndex].content = '❌ 请求超时：后端处理时间过长，请重试或检查 Vite 代理是否正常'
@@ -204,6 +211,14 @@ function scrollToBottom() {
   if (chatContainer.value) {
     chatContainer.value.scrollTop = chatContainer.value.scrollHeight
   }
+}
+
+function stopStreaming() {
+  if (abortRef.value) {
+    abortRef.value.abort()
+    abortRef.value = null
+  }
+  loading.value = false
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -322,12 +337,13 @@ function autoResize(e: Event) {
           <input type="file" ref="fileInput" :accept="ACCEPT_ALL" multiple hidden @change="handleFileSelect" />
         </label>
         <button
-          class="action-btn send-btn"
-          :disabled="!hasInput || loading"
-          @click="handleSend"
-          :title="loading ? '思考中...' : '发送'"
+          class="action-btn"
+          :class="loading ? 'stop-btn' : 'send-btn'"
+          :disabled="loading ? false : !hasInput"
+          @click="loading ? stopStreaming() : handleSend()"
+          :title="loading ? '停止' : '发送'"
         >
-          <Send :size="20" />
+          <component :is="loading ? Square : Send" :size="20" />
         </button>
       </div>
     </div>
@@ -677,6 +693,15 @@ function autoResize(e: Event) {
 .send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.stop-btn {
+  background: #ef4444;
+  color: #fff;
+}
+
+.stop-btn:hover {
+  background: #dc2626;
 }
 
 .chat-input-area.has-input .send-btn:not(:disabled) {
