@@ -72,11 +72,14 @@ def create_event_tool(
     end_time: str | None = None,
     description: str = "",
     priority: str = "normal",
+    remind: bool = True,
 ) -> str:
     """创建新的日程事件。Create a new schedule event.
 
     当用户说"加日程""添加日程""安排会议""帮我记一下""明天我有..."
     等表达时使用。时间可以用中文相对日期，例如"明天下午3点""后天上午10点"。
+
+    如果用户明确说"不用提醒""不需要提醒""只是记一下"，请传入 remind=False。
 
     Args:
         title: 事件标题 / Event title (required)
@@ -84,6 +87,7 @@ def create_event_tool(
         end_time: 结束时间 / Optional end time (可选)，格式同 start_time
         description: 事件描述 / Optional description (可选)
         priority: 优先级 / Priority: "low", "normal", "high" (默认 "normal")
+        remind: 是否需要到时提醒 / Whether to create a reminder (默认 True，填 false 则不创建提醒)
 
     Returns:
         创建结果确认字符串
@@ -108,9 +112,13 @@ def create_event_tool(
 
     # ── 自动联动：创建日程的同时创建一个提醒 ─────────────────────
     reminder_note = ""
-    try:
-        # 只在事件开始时间在未来的情况下创建提醒
-        if parsed_start > _now():
+    now = _now()
+    # Ensure parsed_start is timezone-aware for comparison
+    reminder_trigger = parsed_start
+    if reminder_trigger.tzinfo is None:
+        reminder_trigger = reminder_trigger.replace(tzinfo=tz)
+    if remind and reminder_trigger > now:
+        try:
             from app.reminder.models import ReminderCreate
             from app.reminder.repository import ReminderRepository
             from app.reminder.scheduler import schedule_reminder_job
@@ -125,8 +133,8 @@ def create_event_tool(
             reminder = reminder_repo.create(reminder_data)
             schedule_reminder_job(reminder)
             reminder_note = f"\n   ⏰ 已自动设置提醒（触发时间：{parsed_start.strftime('%H:%M')}）"
-    except Exception as e:
-        reminder_note = f"\n   ⚠️ 提醒设置失败：{e}"
+        except Exception as e:
+            reminder_note = f"\n   ⚠️ 提醒设置失败：{e}"
 
     return (
         f"✅ 已创建日程：**{event.title}**\n"
