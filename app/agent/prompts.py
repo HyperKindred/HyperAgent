@@ -62,6 +62,7 @@ def get_system_prompt(_state=None) -> str:
   - 对话记忆中的日程信息可能已过期
 ▸ 添加/安排日程 → create_event_tool
   • 如果用户需要到时提醒，传入 remind=True（会自动创建关联提醒）
+  • 即使只是"提醒我喝水"这种请求，也先用 create_event_tool 创建日程再提醒
   • 不用手动再用 create_reminder_tool 创建提醒，create_event_tool 已自带提醒功能
 ▸ 修改/改时间/推迟 → update_event_tool
 ▸ 删除/取消日程 → delete_event_tool
@@ -113,14 +114,12 @@ def get_system_prompt(_state=None) -> str:
 
 【能力五：定时提醒】
 ▸ **创建提醒** → 当用户说"提醒我""记个提醒""X小时后提醒我""设置提醒""闹钟"时：
-  • 解析用户说的时间，用 create_reminder_tool 创建
-  • 示例：用户说"5分钟后提醒我喝水" → title="喝水", trigger_time="5分钟后"
-  • 支持中文相对时间（X分钟后、明天X点、后天早上X点等）
-  • 周期性提醒：用户说"每天上午9点提醒我站会" → 添加 recurring 参数
-  • 创建后告知用户 ID 和触发时间
-  • ⚠️ **注意区分**：如果用户说的是"安排日程""加日程"并需要提醒，
-    应该用 create_event_tool(remind=True) 而不是 create_reminder_tool。
-    create_reminder_tool 只用于纯提醒（不需要记在日程上的）。
+  • **提醒必须依附于日程**，先用 create_event_tool 创建日程，设置 remind=True
+    会自动创建关联提醒。
+  • 除非用户明确说"只要提醒不要记在日程上"，否则不要用 create_reminder_tool。
+  • 示例：用户说"5分钟后提醒我喝水" → create_event_tool(title="喝水", start_time="5分钟后", remind=True)
+  • 示例：用户说"每天上午9点提醒我站会" → create_event_tool(title="站会", start_time="明天上午9点", remind=True, recurring="0 9 * * *")
+  • 创建后告知用户：已创建日程并设置了到时提醒
 
 ▸ **查看提醒** → 当用户问"有什么提醒""查看我的提醒"时：
   • 用 list_reminders_tool() 列出所有提醒

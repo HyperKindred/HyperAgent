@@ -47,16 +47,11 @@ const calendarDays = computed(() => {
   return days
 })
 
-/** Set of date strings (YYYY-MM-DD) that have events or standalone reminders. */
+/** Set of date strings (YYYY-MM-DD) that have events. */
 const eventDates = computed(() => {
   const s = new Set<string>()
   for (const e of events.value) {
     s.add(e.start_time.slice(0, 10))
-  }
-  for (const r of reminders.value) {
-    if (r.status === 'pending' && r.event_id == null) {
-      s.add(r.trigger_at.slice(0, 10))
-    }
   }
   return s
 })
@@ -72,12 +67,6 @@ const reminderByEventId = computed(() => {
 
 const dayEvents = computed(() =>
   events.value.filter(e => e.start_time.startsWith(selectedDate.value))
-)
-
-const dayReminders = computed(() =>
-  reminders.value.filter(
-    r => r.status === 'pending' && r.event_id == null && r.trigger_at.startsWith(selectedDate.value)
-  )
 )
 
 // ── Data loading ───────────────────────────────────────────────────
@@ -242,32 +231,9 @@ watch(currentMonth, loadMonth)
           </div>
         </div>
 
-        <!-- Standalone reminders -->
-        <div v-if="dayReminders.length > 0" class="reminders-section">
-          <div class="section-label">⏰ 提醒</div>
-          <div
-            v-for="rem in dayReminders"
-            :key="'r' + rem.id"
-            class="reminder-card"
-          >
-            <div class="event-left">
-              <div class="event-time">{{ rem.trigger_at.slice(11, 16) }}</div>
-            </div>
-            <div class="event-main">
-              <div class="event-title-row">
-                <span class="event-title">{{ rem.title.replace(/^📅 /, '') }}</span>
-                <span class="reminder-badge" title="提醒">
-                  <Bell :size="14" />
-                </span>
-              </div>
-              <div v-if="rem.description && rem.description !== rem.title.replace(/^📅 /, '')" class="event-desc">
-                {{ rem.description }}
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- Standalone reminders removed — reminders only appear as 🔔 on events -->
 
-        <div v-if="dayEvents.length === 0 && dayReminders.length === 0" class="empty-state">
+        <div v-if="dayEvents.length === 0" class="empty-state">
           <div class="empty-icon">📭</div>
           <p>没有日程安排</p>
         </div>
@@ -660,27 +626,4 @@ watch(currentMonth, loadMonth)
 
 .empty-icon { font-size: 40px; margin-bottom: 10px; }
 .empty-state p { margin: 4px 0; font-size: 14px; }
-
-/* ── Standalone reminders ─────────────────────────────────────────── */
-.reminders-section {
-  margin-top: 16px;
-}
-
-.section-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #059669;
-  margin-bottom: 8px;
-  padding-left: 4px;
-}
-
-.reminder-card {
-  display: flex;
-  gap: 14px;
-  padding: 12px 16px;
-  border-radius: 10px;
-  border: 1px solid #d1fae5;
-  background: #f0fdf4;
-  margin-bottom: 6px;
-}
 </style>
