@@ -85,6 +85,8 @@ class MemoryRepository:
             query_emb = get_embedding(query)
         except Exception:
             return self._text_fallback(query, category=category)
+        if query_emb is None:
+            return self._text_fallback(query, category=category)
 
         scored: list[tuple[float, Memory]] = []
         for mem in all_mems:

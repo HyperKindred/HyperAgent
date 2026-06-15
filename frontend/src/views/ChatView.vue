@@ -7,6 +7,12 @@ import { chatStore, initWelcomeMessage, clearChat } from '../store/chat'
 const input = ref('')
 const loading = ref(false)
 const chatContainer = ref<HTMLDivElement | null>(null)
+const pendingImages = ref<string[]>([])
+const fileInput = ref<HTMLInputElement | null>(null)
+
+const MAX_IMAGES = 3
+const MAX_IMAGE_SIZE_MB = 5
+const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
 onMounted(() => {
   initWelcomeMessage()
@@ -16,22 +22,99 @@ onMounted(() => {
 async function handleNewChat() {
   await clearChat()
   initWelcomeMessage()
+  pendingImages.value = []
   await nextTick()
   scrollToBottom()
 }
 
+// ── Image compression ────────────────────────────────────────────
+function compressImage(file: File, maxSize = 1024, quality = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Read failed'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Decode failed'))
+      img.onload = () => {
+        let { width, height } = img
+        if (width > height && width > maxSize) {
+          height = Math.round(height * maxSize / width)
+          width = maxSize
+        } else if (height > maxSize) {
+          width = Math.round(width * maxSize / height)
+          height = maxSize
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return reject(new Error('Canvas 2D unavailable'))
+        ctx.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function handleFileSelect(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (!files) return
+  for (const file of Array.from(files)) {
+    if (!ACCEPTED_TYPES.includes(file.type)) continue
+    if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) continue
+    if (pendingImages.value.length >= MAX_IMAGES) break
+    try {
+      const b64 = await compressImage(file)
+      pendingImages.value.push(b64)
+    } catch { /* skip failed images */ }
+  }
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+function handlePaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault()
+      const file = item.getAsFile()
+      if (!file) continue
+      if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) continue
+      if (pendingImages.value.length >= MAX_IMAGES) break
+      compressImage(file).then(b64 => {
+        if (pendingImages.value.length < MAX_IMAGES) {
+          pendingImages.value.push(b64)
+        }
+      })
+    }
+  }
+}
+
+function removePendingImage(index: number) {
+  pendingImages.value.splice(index, 1)
+}
+
 async function handleSend() {
   const text = input.value.trim()
-  if (!text || loading.value) return
+  const hasImages = pendingImages.value.length > 0
+  if ((!text && !hasImages) || loading.value) return
 
-  chatStore.messages.push({ role: 'user', content: text })
+  const imagesToSend = hasImages ? [...pendingImages.value] : undefined
+
+  chatStore.messages.push({
+    role: 'user',
+    content: text,
+    images: imagesToSend,
+  })
   input.value = ''
+  pendingImages.value = []
   loading.value = true
 
   await nextTick()
   scrollToBottom()
 
-  // pre-fill empty assistant message, append tokens one by one
   const msgIndex = chatStore.messages.length
   chatStore.messages.push({ role: 'assistant', content: '' })
 
@@ -39,7 +122,7 @@ async function handleSend() {
   scrollToBottom()
 
   try {
-    for await (const token of sendChatStream(text, chatStore.threadId)) {
+    for await (const token of sendChatStream(text, chatStore.threadId, imagesToSend)) {
       chatStore.messages[msgIndex].content += token
       await nextTick()
       scrollToBottom()
@@ -67,7 +150,6 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-/** Simple markdown-like rendering */
 function renderMarkdown(text: string): string {
   const html = marked.parse(text, { breaks: true })
   return typeof html === 'string' ? html : ''
@@ -94,6 +176,12 @@ function renderMarkdown(text: string): string {
           {{ msg.role === 'user' ? '👤' : '🤖' }}
         </div>
     <div class="message-body">
+          <div v-if="msg.images && msg.images.length > 0" class="message-images">
+            <img v-for="(img, j) in msg.images" :key="j" :src="img" class="msg-img" alt="图片" />
+          </div>
+          <div v-else-if="msg.hasImages" class="message-images">
+            <div class="img-placeholder">🖼️ <span>图片</span></div>
+          </div>
           <div class="message-content" :class="{ 'cursor-blink': loading && i === chatStore.messages.length - 1 && msg.content }">
             <div v-if="loading && i === chatStore.messages.length - 1 && !msg.content" class="typing-indicator">
               <span></span><span></span><span></span>
@@ -105,7 +193,19 @@ function renderMarkdown(text: string): string {
 
     </div>
 
+    <div class="pending-images" v-if="pendingImages.length > 0">
+      <div v-for="(img, i) in pendingImages" :key="'p'+i" class="pending-image-item">
+        <img :src="img" class="pending-thumb" alt="待发送图片" />
+        <button class="remove-img" @click="removePendingImage(i)" title="移除">&times;</button>
+      </div>
+      <span class="pending-hint">{{ pendingImages.length }}/{{ MAX_IMAGES }}</span>
+    </div>
+
     <div class="chat-input-area">
+      <label class="upload-btn" title="上传图片（或 Ctrl+V 粘贴）">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <input type="file" ref="fileInput" :accept="ACCEPTED_TYPES.join(',')" multiple hidden @change="handleFileSelect" />
+      </label>
       <textarea
         v-model="input"
         class="chat-input"
@@ -113,10 +213,11 @@ function renderMarkdown(text: string): string {
         rows="2"
         :disabled="loading"
         @keydown="handleKeydown"
+        @paste="handlePaste"
       ></textarea>
       <button
         class="send-btn"
-        :disabled="!input.trim() || loading"
+        :disabled="(!input.trim() && pendingImages.length === 0) || loading"
         @click="handleSend"
       >
         <span v-if="!loading">发送</span>
@@ -200,7 +301,8 @@ function renderMarkdown(text: string): string {
 
 .message.user .message-body {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .message-content {
@@ -223,16 +325,117 @@ function renderMarkdown(text: string): string {
   border-bottom-right-radius: 4px;
 }
 
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  max-width: 360px;
+}
 
+.msg-img {
+  width: 100%;
+  max-width: 240px;
+  max-height: 180px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid #e0e3e8;
+}
 
+.img-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: #f0f1f5;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 6px;
+}
+
+.img-placeholder span {
+  font-size: 12px;
+  color: #999;
+}
+
+.pending-images {
+  display: flex;
+  gap: 10px;
+  padding: 12px 28px 0;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pending-image-item {
+  position: relative;
+}
+
+.pending-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #e0e3e8;
+}
+
+.remove-img {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.remove-img:hover {
+  background: #dc2626;
+}
+
+.pending-hint {
+  font-size: 12px;
+  color: #999;
+  margin-left: 4px;
+}
 
 .chat-input-area {
-  padding: 16px 28px 24px;
+  padding: 12px 28px 24px;
   border-top: 1px solid #eef0f4;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-end;
   flex-shrink: 0;
+}
+
+.upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #e0e3e8;
+  border-radius: 10px;
+  background: #fff;
+  color: #999;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.upload-btn:hover {
+  background: #f0f1f5;
+  color: #6366f1;
+  border-color: #c7d2fe;
 }
 
 .chat-input {
@@ -343,6 +546,3 @@ function renderMarkdown(text: string): string {
   30% { transform: translateY(-6px); }
 }
 </style>
-
-
-

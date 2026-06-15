@@ -32,7 +32,7 @@ uv run pytest && cd frontend && .\node_modules\.bin\vue-tsc --noEmit && npm run 
 
 ### LLM 提供商
 
-后端通过 OpenAI 兼容接口调用 LLM，默认使用 **OpenCode Go 套餐**（`https://opencode.ai/zen/go/v1`）。
+后端通过 OpenAI 兼容接口调用 LLM，默认使用 **OpenCode Go 套餐**（`https://opencode.ai/zen/go/v1`），另有独立的 Vision 模型和 Embedding 模型。
 模型配置在 `.env` 中：
 
 | 环境变量 | 用途 | 默认值 |
@@ -40,14 +40,16 @@ uv run pytest && cd frontend && .\node_modules\.bin\vue-tsc --noEmit && npm run 
 | `LLM_BASE_URL` | 聊天 API 地址 | `https://opencode.ai/zen/go/v1` |
 | `LLM_API_KEY` | OpenCode API Key | 需自行填写 |
 | `LLM_MODEL` | 聊天模型 | `deepseek-v4-flash` |
-| `EMBEDDING_BASE_URL` | 向量化 API 地址 | `https://api.deepseek.com/v1` |
-| `EMBEDDING_API_KEY` | Embedding API Key | 默认复用 DEEPSEEK_API_KEY |
-| `EMBEDDING_MODEL` | 向量化模型 | `deepseek-embedding` |
+| `VISION_MODEL` | 多模态模型 | `kimi-k2.6` |
+| `EMBEDDING_BASE_URL` | 向量化 API 地址 | `https://openrouter.ai/api/v1` |
+| `EMBEDDING_API_KEY` | OpenRouter API Key | 需自行填写 |
+| `EMBEDDING_MODEL` | 向量化模型 | `qwen/qwen3-embedding-8b` |
 
-三个模型层各自独立配置，互不干扰：
+四个模型层各自独立配置，互不干扰：
 
 - **LLM（聊天推理）** → OpenCode，$15/月 Go 套餐
-- **Embedding（向量化）** → DeepSeek 按量计费（用量极小，基本免费）
+- **Vision（图片理解）** → OpenCode，共享 $15/月套餐额度，5,750 次/月
+- **Embedding（向量化）** → OpenRouter 按量计费（qwen/qwen3-embedding-8b 约 $0.13/M token，用量极小）
 - **搜索引擎** → DuckDuckGo → Bing 兜底 → 可选自定义 SEARCH_ENGINE_URL
 
 ### 数据流（聊天）
@@ -97,16 +99,16 @@ CalendarView.vue → GET /api/events → ScheduleRepository → SQLite（hyperag
 
 ### RAG 个人记忆系统
 
-记忆通过 DeepSeek Embedding API 向量化，语义搜索而非关键词匹配。
+记忆通过 OpenRouter Embedding API（qwen/qwen3-embedding-8b）向量化，语义搜索而非关键词匹配。
 
 ```
 用户说"最近开始学吉他"
   → remember_fact_tool(content="用户最近开始学吉他...")
-  → DeepSeek Embedding API → 向量存 SQLite
+  → OpenRouter Embedding API → 4096 维向量存 SQLite
 
 用户问"最近在忙什么"
   → recall_facts_tool(query="最近在忙什么")
-  → DeepSeek Embedding API → 余弦相似度 → 匹配到"吉他"记忆
+  → OpenRouter Embedding API → 余弦相似度 → 匹配到"吉他"记忆
   → 如果 API 不可用，自动降级为 LIKE 文本搜索
 ```
 
@@ -183,15 +185,16 @@ Vue Router 有两个视图：`/`（ChatView 对话页）和 `/calendar`（Calend
 
 ### 配置
 
-`app/config.py` 中的 `pydantic-settings` 从 `.env` 读取环境变量。单例 `settings` 实例被全后端引用。
+`app/config.py` 中的 `pydantic-settings` 从 `.env` 读取环境变量。单例 `settings` 实例被全后端引用。新的配置项直接追加在 `.env` 末尾即可，无需改 config.py（但 `vision_model` 已在 `Settings` 类中预定义）。
 
 主要配置分组：
 
 | 分组 | 说明 |
 |------|------|
 | `llm_*` | 聊天 API（OpenCode / OpenAI 兼容接口） |
-| `embedding_*` | 向量化 API（默认 DeepSeek） |
-| `deepseek_*` | 向后兼容的嵌入配置兜底 |
+| `vision_model` | 多模态模型名 |
+| `embedding_*` | 向量化 API（OpenRouter / OpenAI 兼容接口） |
+| `deepseek_*` | 旧配置兜底，`embedding_api_key` 为空时自动回退 |
 | `search_engine_url` | 可选的自定义搜索引擎 URL |
 | `max_history_messages` | 对话历史裁剪阈值（默认 40） |
 
@@ -209,3 +212,38 @@ Vue Router 有两个视图：`/`（ChatView 对话页）和 `/calendar`（Calend
 4. 在 `app/agent/prompts.py` 中描述新能力
 5. 可选：在 `app/api/<domain>.py` 中添加 REST 路由，在 `app/main.py` 中注册
 6. 在 `tests/` 中添加测试
+
+## 多模态图片支持
+
+用户可通过 **"+" 按钮** 或 **Ctrl+V 粘贴** 上传图片到对话。
+
+**数据流**：
+```
+用户上传图片
+  → Canvas 压缩（最长边 1024px, JPEG quality 0.7）→ base64
+  → POST /api/chat/stream { message, images: [base64...] }
+  → graph.py 检测有图 → 自动切 vision_model（kimi-k2.6）
+  → HumanMessage(content=[{type:text}, {type:image_url}])
+  → LLM 视觉模型流式回复
+  → 下一轮纯文本对话自动切回 LLM_MODEL
+```
+
+**边界处理**：
+- 前端限制：单张 ≤ 5MB（原始），单次 ≤ 3 张，仅 png/jpeg/webp
+- localStorage 不存 base64，只保留 `hasImages: true` 标记
+- 刷新后显示 🖼️ 图片 占位标签
+- Vision 模型在 `.env` 的 `VISION_MODEL` 中配置
+
+**涉及的改动文件**：
+- `app/config.py` — 新增 `vision_model` 字段
+- `app/agent/graph.py` — `run_agent`/`stream_agent` 接收 `images` 参数；自动切换视觉模型；HumanMessage content list 格式
+- `app/api/chat.py` — `ChatRequest.images: list[str] = []`
+- `frontend/src/api/client.ts` — `sendChatStream`/`sendChat` 传 `images`
+- `frontend/src/store/chat.ts` — `Message.images` 接口 + `hasImages` 持久化标记
+- `frontend/src/views/ChatView.vue` — 粘贴/选择/压缩/预览/移除 完整 UX
+- `.env` — 新增 `VISION_MODEL` 和 `EMBEDDING_*` 配置
+
+**Embedding 变更**：
+- DeepSeek Embedding API 已废弃（所有端点返回 404）
+- 切换到 OpenRouter，模型 `qwen/qwen3-embedding-8b`（4096 维）
+- 修复 `repository.py` 中 `get_embedding()` 返回 `None` 时的降级路径

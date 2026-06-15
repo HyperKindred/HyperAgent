@@ -4,6 +4,11 @@ import { createThread } from '../api/client'
 export interface Message {
   role: 'user' | 'assistant'
   content: string
+  /** Base64 images — only kept in memory during the session.
+   *  Stripped before localStorage persistence to avoid quota issues. */
+  images?: string[]
+  /** Persisted flag: true if this message originally had images. */
+  hasImages?: boolean
 }
 
 interface ChatStore {
@@ -67,7 +72,14 @@ function loadMessages(): Message[] {
 
 function saveMessages(msgs: Message[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-MAX_STORED)))
+    // Strip images before serialization but keep a hasImages flag.
+    const stripped = msgs.map(({ images, ...rest }) => {
+      if (images && images.length > 0) {
+        return { ...rest, hasImages: true }
+      }
+      return rest
+    })
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped.slice(-MAX_STORED)))
   } catch {
     // localStorage full — silently ignore
   }

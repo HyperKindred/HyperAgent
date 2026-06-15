@@ -6,6 +6,7 @@ from typing import AsyncGenerator
 from typing import TYPE_CHECKING
 
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 from langgraph.graph.message import RemoveMessage
 from langgraph.prebuilt import create_react_agent
 
@@ -74,21 +75,41 @@ def build_agent(model: str | None = None):
     )
 
 
-def run_agent(user_input: str, thread_id: str = "hyperagent-main", model: str | None = None) -> str:
+def run_agent(user_input: str, thread_id: str = "hyperagent-main", model: str | None = None, images: list[str] | None = None) -> str:
     """Synchronously invoke the agent, returning the final assistant message.
 
     Before each call, automatically trims old messages if the conversation
     exceeds `max_history_messages`.  This keeps the prompt compact and
     prevents context-window overflow.
     """
-    agent = build_agent(model=model)
+    # ── 有图时自动切换到视觉模型 ────────────────────────────────────
+    has_images = images and len(images) > 0
+    effective_model = settings.vision_model if (has_images and settings.vision_model) else model
+
+    agent = build_agent(model=effective_model)
     config = {"configurable": {"thread_id": thread_id}}
 
-    # ── 自动裁剪过长的对话历史 ──────────────────────────────────────
     _trim_if_needed(agent, config)
 
+    # ── 构建消息（有图时用 content list 格式） ───────────────────────
+    if has_images:
+        content: list[dict] = [{"type": "text", "text": user_input}]
+        for img_b64 in images:
+            # 兼容前端 toDataURL() 返回的完整 data URL 和纯 base64
+            if img_b64.startswith("data:image/"):
+                img_url = img_b64
+            else:
+                img_url = f"data:image/jpeg;base64,{img_b64}"
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": img_url}
+            })
+        messages = [HumanMessage(content=content)]
+    else:
+        messages = [("user", user_input)]
+
     response = agent.invoke(
-        {"messages": [("user", user_input)]},
+        {"messages": messages},
         config=config,
     )
     return response["messages"][-1].content
@@ -98,6 +119,7 @@ async def stream_agent(
     user_input: str,
     thread_id: str = "hyperagent-main",
     model: str | None = None,
+    images: list[str] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream the agent's response token-by-token via Server-Sent Events.
 
@@ -108,12 +130,33 @@ async def stream_agent(
     and `data: {"type": "done"}\n\n` when finished.
     """
     try:
-        agent = build_agent(model=model)
+        # ── 有图时自动切换到视觉模型 ────────────────────────────────
+        has_images = images and len(images) > 0
+        effective_model = settings.vision_model if (has_images and settings.vision_model) else model
+
+        agent = build_agent(model=effective_model)
         config = {"configurable": {"thread_id": thread_id}}
         _trim_if_needed(agent, config)
 
+        # ── 构建消息（有图时用 content list 格式） ───────────────────
+        if has_images:
+            content = [{"type": "text", "text": user_input}]
+            for img_b64 in images:
+                # 兼容前端 toDataURL() 返回的完整 data URL 和纯 base64
+                if img_b64.startswith("data:image/"):
+                    img_url = img_b64
+                else:
+                    img_url = f"data:image/jpeg;base64,{img_b64}"
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": img_url}
+                })
+            input_messages = [HumanMessage(content=content)]
+        else:
+            input_messages = [("user", user_input)]
+
         async for event in agent.astream_events(
-            {"messages": [("user", user_input)]},
+            {"messages": input_messages},
             config,
             version="v2",
         ):

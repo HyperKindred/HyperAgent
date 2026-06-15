@@ -10,10 +10,14 @@ const api = axios.create({
 export async function sendChat(
   message: string,
   threadId?: string,
+  images?: string[],
 ): Promise<string> {
-  const payload: Record<string, string> = { message }
+  const payload: Record<string, any> = { message }
   if (threadId) {
     payload.thread_id = threadId
+  }
+  if (images && images.length > 0) {
+    payload.images = images
   }
   const { data } = await api.post('/chat', payload)
   return data.reply
@@ -68,9 +72,11 @@ export async function deleteEvent(id: number): Promise<void> {
 export async function* sendChatStream(
   message: string,
   threadId?: string,
+  images?: string[],
 ): AsyncGenerator<string> {
-  const payload: Record<string, string> = { message }
+  const payload: Record<string, any> = { message }
   if (threadId) payload.thread_id = threadId
+  if (images && images.length > 0) payload.images = images
 
   const response = await fetch('/api/chat/stream', {
     method: 'POST',

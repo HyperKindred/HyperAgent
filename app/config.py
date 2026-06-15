@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
 
+    # Vision API — separate model for multimodal (image) input
+    # When empty, image input falls back to the default LLM model
+    vision_model: str = "kimi-k2.6"
+
     # Storage
     data_dir: Path = Path("data")
     database_url: str = "sqlite:///data/hyperagent.db"
