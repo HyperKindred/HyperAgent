@@ -2,14 +2,13 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import {
   fetchEventsByMonth,
-  fetchEvents,
   fetchReminders,
   deleteEvent,
   createEvent,
   type EventItem,
   type ReminderItem,
 } from '../api/client'
-import { CalendarDays, ChevronLeft, ChevronRight, Bell, Plus, X, Trash2 } from '@lucide/vue'
+import { CalendarDays, ChevronLeft, ChevronRight, Bell, Plus, Trash2 } from '@lucide/vue'
 
 // ── State ──────────────────────────────────────────────────────────
 const events = ref<EventItem[]>([])
