@@ -67,6 +67,8 @@ def get_system_prompt(_state=None) -> str:
 ▸ 查时间日期 → get_current_datetime_tool
 ▸ 时间解析：用户可能用中文相对日期（今天、明天、后天、下周X等）
   结合上面的当前时间正确解析
+▸ **关于提醒**：创建日程时默认不给提醒。但对于"会议""比赛""面试""约了人"等
+  时间敏感事项，**主动问用户一句"需要到时提醒你吗？"**，用户同意再传 remind=True。
 
 【能力二：个人记忆（RAG 语义记忆）】
 你可以记住和回忆对话内容，从而提供个性化的服务。
@@ -121,6 +123,8 @@ def get_system_prompt(_state=None) -> str:
 
 ▸ **删除提醒** → 用户说"取消提醒""删除提醒""不提醒了"：
   • 先用 list_reminders_tool 找到提醒 ID，再用 delete_reminder_tool 删除
+
+▸ **与日程联动**：create_event_tool 有 remind 参数，创建日程时可顺带创建提醒。
 
 【操作确认】
 - 日程操作后给出清晰确认（含 ID 和具体时间）

@@ -72,14 +72,19 @@ def create_event_tool(
     end_time: str | None = None,
     description: str = "",
     priority: str = "normal",
-    remind: bool = True,
+    remind: bool = False,
 ) -> str:
     """创建新的日程事件。Create a new schedule event.
 
     当用户说"加日程""添加日程""安排会议""帮我记一下""明天我有..."
     等表达时使用。时间可以用中文相对日期，例如"明天下午3点""后天上午10点"。
 
-    如果用户明确说"不用提醒""不需要提醒""只是记一下"，请传入 remind=False。
+    **关于是否提醒：**
+    - 默认不给提醒（remind=False）
+    - 如果用户明确说"提醒我""设个提醒""到点叫我"等，传 remind=True
+    - 对于"会议""比赛""面试""考试""约了人"等时间敏感的事项，
+      主动问用户一句"需要设置提醒吗？"
+    - 对于"看电影""跑步""购物""记一下"等随意事项，直接创建无需询问
 
     Args:
         title: 事件标题 / Event title (required)
@@ -87,7 +92,7 @@ def create_event_tool(
         end_time: 结束时间 / Optional end time (可选)，格式同 start_time
         description: 事件描述 / Optional description (可选)
         priority: 优先级 / Priority: "low", "normal", "high" (默认 "normal")
-        remind: 是否需要到时提醒 / Whether to create a reminder (默认 True，填 false 则不创建提醒)
+        remind: 是否创建提醒 / Create a reminder (默认 False，需要时由 agent 询问用户后设为 True)
 
     Returns:
         创建结果确认字符串
