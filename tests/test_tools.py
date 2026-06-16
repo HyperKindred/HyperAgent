@@ -162,20 +162,17 @@ class TestForgetFactTool:
 
 
 class TestWeatherQueryTool:
-    def test_no_api_key(self):
-        """Should return a helpful setup message when no API key is configured."""
-        import app.config
-        app.config.settings.weather_api_key = ""
-        result = weather_query_tool.invoke({"city": "北京"})
-        assert "未配置" in result or "api_key" in result.lower()
+    def test_weather_with_fallback(self):
+        """Should return weather data (uses wttr.in fallback, no API key needed)."""
+        result = weather_query_tool.invoke({"city": "Beijing"})
+        assert "Beijing" in result or "北京" in result
+        assert "°C" in result
 
-    def test_city_required(self):
-        """City parameter should be required."""
-        # Just verify the tool accepts a city arg and returns something
-        import app.config
-        app.config.settings.weather_api_key = ""
-        result = weather_query_tool.invoke({"city": "上海"})
-        assert "未配置" in result or "api_key" in result.lower()
+    def test_weather_tokyo(self):
+        """Should work with different cities (wttr.in fallback)."""
+        result = weather_query_tool.invoke({"city": "Tokyo"})
+        assert "Tokyo" in result or "东京" in result
+        assert "°C" in result
 
 
 class TestCalculateTool:
