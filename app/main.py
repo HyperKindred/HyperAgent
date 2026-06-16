@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import chat, reminder as reminder_api, schedule
+from app.api import thread as thread_api
 from app.schedule.database import init_db
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -44,6 +45,7 @@ app.add_middleware(
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(schedule.router, prefix="/api", tags=["schedule"])
 app.include_router(reminder_api.router, prefix="/api", tags=["reminder"])
+app.include_router(thread_api.router, prefix="/api", tags=["thread"])
 
 
 # ── Static frontend serving (production mode) ─────────────────────────

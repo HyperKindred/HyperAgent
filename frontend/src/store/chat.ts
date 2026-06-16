@@ -1,5 +1,5 @@
 import { reactive, watch } from 'vue'
-import { createThread } from '../api/client'
+import { createThread, listThreads, getThreadMessages, deleteThread as apiDeleteThread, renameThread as apiRenameThread } from '../api/client'
 
 export interface FileAttachment {
   name: string
@@ -16,8 +16,7 @@ export interface FileInfo {
 export interface Message {
   role: 'user' | 'assistant'
   content: string
-  /** Base64 images — only kept in memory during the session.
-   *  Stripped before localStorage persistence to avoid quota issues. */
+  /** Base64 images — only kept in memory during the session. */
   images?: string[]
   /** Uploaded files — only kept in memory during the session. */
   files?: FileAttachment[]
@@ -27,24 +26,39 @@ export interface Message {
   fileInfo?: FileInfo[]
 }
 
+export interface ThreadMeta {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
 interface ChatStore {
   messages: Message[]
   threadId: string
+  threads: ThreadMeta[]
 }
 
-const STORAGE_KEY = 'hyperagent-chat'
-const MAX_STORED = 100  // 最多持久化 100 条，避免 localStorage 过大
+const MAX_STORED = 100  // max messages per thread
+
+function messagesStorageKey(threadId: string): string {
+  return `hyperagent-chat-${threadId}`
+}
+
+const THREAD_STORAGE_KEY = 'hyperagent-thread'
 
 /** 共享的对话状态 —— 页面切换不丢失，刷新后自动恢复最近消息 */
 export const chatStore = reactive<ChatStore>({
-  messages: loadMessages(),
+  messages: loadMessagesForThread(loadThreadId()),
   threadId: loadThreadId(),
+  threads: [],
 })
 
-// 每次消息变化自动保存到 localStorage
+// Auto-save messages on every change
 watch(
   () => chatStore.messages,
-  () => saveMessages(chatStore.messages),
+  () => saveMessagesForThread(chatStore.threadId, chatStore.messages),
   { deep: true },
 )
 
@@ -64,7 +78,6 @@ function pickGreeting(): string {
 export function initWelcomeMessage() {
   if (_initialized) return
   _initialized = true
-  // 如果从 localStorage 恢复的已有消息，不重复注入
   if (chatStore.messages.length > 0) return
   chatStore.messages.push({
     role: 'assistant',
@@ -72,24 +85,117 @@ export function initWelcomeMessage() {
   })
 }
 
-// ── localStorage helpers ────────────────────────────────────────────
+// ── Thread management ───────────────────────────────────────────────
 
-function loadMessages(): Message[] {
+export async function loadThreadList() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    chatStore.threads = await listThreads()
+  } catch {
+    // Offline — keep existing list
+  }
+}
+
+export async function switchThread(threadId: string) {
+  if (threadId === chatStore.threadId) return
+
+  // Save current thread messages
+  saveMessagesForThread(chatStore.threadId, chatStore.messages)
+
+  // Switch
+  chatStore.threadId = threadId
+  localStorage.setItem(THREAD_STORAGE_KEY, threadId)
+
+  // Load target thread messages (from cache or API)
+  const cached = loadMessagesForThread(threadId)
+  if (cached.length > 0) {
+    chatStore.messages = cached
+    _initialized = chatStore.messages.length > 0
+  } else {
+    // Fetch from backend
+    try {
+      const history = await getThreadMessages(threadId)
+      chatStore.messages = history.length > 0
+        ? history as Message[]
+        : []
+      // Cache them
+      saveMessagesForThread(threadId, chatStore.messages)
+    } catch {
+      chatStore.messages = []
+    }
+    _initialized = chatStore.messages.length > 0
+  }
+
+  // Inject welcome if empty
+  if (chatStore.messages.length === 0) {
+    _initialized = false
+    initWelcomeMessage()
+  }
+
+  // Refresh thread list
+  await loadThreadList()
+}
+
+export async function clearChat() {
+  try {
+    const newId = await createThread()
+    chatStore.threadId = newId
+    localStorage.setItem(THREAD_STORAGE_KEY, newId)
+  } catch {
+    chatStore.threadId = `hyperagent-${Date.now().toString(36)}`
+  }
+  chatStore.messages.splice(0)
+  removeMessagesForThread(chatStore.threadId)
+  _initialized = false
+  initWelcomeMessage()
+  await loadThreadList()
+}
+
+export async function deleteThreadById(threadId: string) {
+  try {
+    await apiDeleteThread(threadId)
+  } catch {
+    // Ignore if already deleted
+  }
+  removeMessagesForThread(threadId)
+  chatStore.threads = chatStore.threads.filter(t => t.id !== threadId)
+
+  // If we deleted the current thread, switch to the most recent one
+  if (threadId === chatStore.threadId) {
+    const next = chatStore.threads[0]
+    if (next) {
+      await switchThread(next.id)
+    } else {
+      await clearChat()
+    }
+  }
+}
+
+export async function renameThreadById(threadId: string, title: string) {
+  try {
+    await apiRenameThread(threadId, title)
+    const t = chatStore.threads.find(t => t.id === threadId)
+    if (t) t.title = title
+  } catch {
+    // Ignore
+  }
+}
+
+// ── localStorage helpers (per-thread) ──────────────────────────────
+
+function loadMessagesForThread(threadId: string): Message[] {
+  try {
+    const raw = localStorage.getItem(messagesStorageKey(threadId))
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) return parsed.slice(-MAX_STORED)
   } catch {
-    // corrupted data — start fresh
+    // corrupted data
   }
   return []
 }
 
-function saveMessages(msgs: Message[]) {
+function saveMessagesForThread(threadId: string, msgs: Message[]) {
   try {
-    // Strip images and files content before serialization,
-    // but keep fileInfo (name + mime) so filenames survive refresh.
     const stripped = msgs.map(({ images, files, ...rest }) => {
       const out: Record<string, any> = { ...rest }
       if (images && images.length > 0) out.hasImages = true
@@ -98,31 +204,15 @@ function saveMessages(msgs: Message[]) {
       }
       return out as Message
     })
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped.slice(-MAX_STORED)))
+    localStorage.setItem(messagesStorageKey(threadId), JSON.stringify(stripped.slice(-MAX_STORED)))
   } catch {
-    // localStorage full — silently ignore
+    // localStorage full
   }
 }
 
-/** 清空前端显示 + localStorage（线程级别的 /new 操作） */
-export async function clearChat() {
-  try {
-    const newId = await createThread()
-    chatStore.threadId = newId
-    localStorage.setItem(THREAD_STORAGE_KEY, newId)
-  } catch {
-    // API 不可用时回退到本地时间戳（仍然创建新 ID）
-    chatStore.threadId = `hyperagent-${Date.now().toString(36)}`
-  }
-  chatStore.messages.splice(0)
-  try { localStorage.removeItem(STORAGE_KEY) } catch {}
-  _initialized = false
+function removeMessagesForThread(threadId: string) {
+  try { localStorage.removeItem(messagesStorageKey(threadId)) } catch {}
 }
-
-
-// ── thread_id localStorage helpers ──────────────────────────────────
-
-const THREAD_STORAGE_KEY = 'hyperagent-thread'
 
 function loadThreadId(): string {
   try {
@@ -131,7 +221,3 @@ function loadThreadId(): string {
     return 'hyperagent-main'
   }
 }
-
-
-
-

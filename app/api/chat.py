@@ -71,7 +71,12 @@ async def chat_stream(request: ChatRequest):
 @router.post("/threads")
 def new_thread() -> ThreadResponse:
     """Create a new conversation thread and return its ID."""
+    from app.thread.models import ThreadCreate
+    from app.thread.repository import ThreadRepository
+
     thread_id = f"hyperagent-{uuid.uuid4().hex[:8]}"
+    repo = ThreadRepository()
+    repo.create(ThreadCreate(thread_id=thread_id))
     return ThreadResponse(thread_id=thread_id)
 
 

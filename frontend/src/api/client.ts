@@ -47,9 +47,33 @@ export async function sendChat(
 }
 
 /** Create a new conversation thread and return its ID. */
-export async function createThread(): Promise<string> {
-  const { data } = await api.post('/threads')
-  return data.thread_id
+export async function createThread(title?: string): Promise<string> {
+  const payload: Record<string, any> = {}
+  if (title) payload.title = title
+  const { data } = await api.post('/threads', payload)
+  return data.id || data.thread_id
+}
+
+/** List all conversation threads (metadata only). */
+export async function listThreads(): Promise<any[]> {
+  const { data } = await api.get('/threads')
+  return data
+}
+
+/** Get message history for a thread. */
+export async function getThreadMessages(threadId: string): Promise<{ role: string; content: string }[]> {
+  const { data } = await api.get(`/threads/${threadId}/messages`)
+  return data.messages || []
+}
+
+/** Rename a thread. */
+export async function renameThread(threadId: string, title: string): Promise<void> {
+  await api.put(`/threads/${threadId}`, { title })
+}
+
+/** Delete a thread and its checkpoints. */
+export async function deleteThread(threadId: string): Promise<void> {
+  await api.delete(`/threads/${threadId}`)
 }
 
 export interface EventItem {
