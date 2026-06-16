@@ -4,21 +4,27 @@ Uses BackgroundScheduler + MemoryJobStore.
 On startup, reloads all pending reminders from DB and schedules them.
 """
 
+import asyncio
 import logging
 from datetime import datetime
 
+import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.config import settings
 from app.reminder.models import Reminder
 from app.reminder.repository import ReminderRepository, NotificationRepository
 
 logger = logging.getLogger(__name__)
 
+tz = pytz.timezone(settings.timezone)
+
 # Singleton
 scheduler: BackgroundScheduler | None = None
+_event_loop: asyncio.AbstractEventLoop | None = None
 
 
 def fire_reminder(reminder_id: int) -> None:
@@ -31,17 +37,46 @@ def fire_reminder(reminder_id: int) -> None:
     if reminder is None or reminder.status != "pending":
         return
 
-    # Mark as fired
-    reminder_repo.mark_fired(reminder_id)
-
     # Enqueue a notification for SSE delivery
     notification = notif_repo.enqueue(reminder)
+
+    # Mark as fired
+    reminder_repo.mark_fired(reminder_id)
 
     # If recurring, schedule the next occurrence
     if reminder.recurring:
         _schedule_recurring(reminder)
 
     logger.info("Notification %s enqueued for reminder '%s'", notification.id, reminder.title)
+
+    # Push to SSE clients in real-time
+    _push_notification_to_sse(notification)
+
+
+def _push_notification_to_sse(notification) -> None:
+    """Push a PendingNotification to all connected SSE clients."""
+    global _event_loop
+    loop = _event_loop
+    if loop is None or not loop.is_running():
+        return
+    try:
+        import json
+
+        from app.reminder.notifier import _sse_clients
+
+        payload = json.dumps({
+            "id": notification.id,
+            "event_type": notification.event_type,
+            "title": notification.title,
+            "body": notification.body,
+            "created_at": notification.created_at.isoformat(),
+        }, ensure_ascii=False)
+
+        if _sse_clients:
+            for queue in _sse_clients.copy():
+                asyncio.run_coroutine_threadsafe(queue.put(payload), loop)
+    except Exception as e:
+        logger.warning("Failed to push notification to SSE: %s", e)
 
 
 def _schedule_recurring(reminder: Reminder) -> None:
@@ -102,7 +137,7 @@ def _scan_and_schedule() -> None:
     """
     repo = ReminderRepository()
     reminders = repo.list_pending()
-    now = datetime.utcnow()
+    now = datetime.now(tz).replace(tzinfo=None)  # naive local time, matching stored trigger_at
 
     for r in reminders:
         if r.trigger_at <= now:
@@ -112,10 +147,17 @@ def _scan_and_schedule() -> None:
 
 def start_scheduler() -> BackgroundScheduler:
     """Initialize and start the APScheduler background scheduler."""
-    global scheduler
+    global scheduler, _event_loop
 
     if scheduler is not None:
         return scheduler
+
+    # Save reference to the main event loop for SSE pushing from scheduler thread
+    try:
+        _event_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        _event_loop = None
+        logger.warning("No running event loop found; SSE push disabled")
 
     scheduler = BackgroundScheduler(
         job_defaults={"misfire_grace_time": 60},
@@ -132,7 +174,7 @@ def start_scheduler() -> BackgroundScheduler:
     # Load pending reminders from DB and schedule them
     repo = ReminderRepository()
     pending = repo.list_pending()
-    now = datetime.utcnow()
+    now = datetime.now(tz).replace(tzinfo=None)  # naive local time
     for r in pending:
         if r.trigger_at > now:
             schedule_reminder_job(r)

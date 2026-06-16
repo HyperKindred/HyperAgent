@@ -42,12 +42,25 @@ async def sse_event_stream() -> AsyncGenerator[str, None]:
             yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
             repo.mark_delivered(note.id)
 
-        # Then listen for new ones
+        # Then listen for new ones + periodically sweep undelivered
         while True:
             try:
-                notification = await asyncio.wait_for(queue.get(), timeout=30.0)
+                notification = await asyncio.wait_for(queue.get(), timeout=15.0)
                 yield f"data: {notification}\n\n"
             except asyncio.TimeoutError:
+                # Periodic sweep: flush any undelivered notifications (safety net)
+                repo = NotificationRepository()
+                undelivered = repo.get_undelivered()
+                for note in undelivered:
+                    data = {
+                        "id": note.id,
+                        "event_type": note.event_type,
+                        "title": note.title,
+                        "body": note.body,
+                        "created_at": note.created_at.isoformat(),
+                    }
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    repo.mark_delivered(note.id)
                 # Send keepalive to prevent connection timeout
                 yield ": keepalive\n\n"
     finally:

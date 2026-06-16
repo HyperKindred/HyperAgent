@@ -117,6 +117,24 @@ class TestDeleteReminder:
         assert success is True
         assert repo.get_by_id(reminder.id) is None
 
+    def test_delete_cleans_up_pending_notifications(self, session):
+        """Deleting a reminder should also remove its undelivered PendingNotifications."""
+        repo = ReminderRepository(db=session)
+        notif_repo = NotificationRepository(db=session)
+
+        data = ReminderCreate(title="测试", trigger_at=datetime.utcnow() + timedelta(hours=1))
+        reminder = repo.create(data)
+
+        # Enqueue a notification (simulating fire_reminder)
+        note = notif_repo.enqueue(reminder)
+        assert note.delivered is False
+
+        # Delete the reminder — notification should be cleaned up
+        repo.delete(reminder.id)
+
+        undelivered = notif_repo.get_undelivered()
+        assert all(n.id != note.id for n in undelivered), "PendingNotification should be removed on reminder delete"
+
     def test_delete_nonexistent(self, session):
         repo = ReminderRepository(db=session)
         assert repo.delete(99999) is False

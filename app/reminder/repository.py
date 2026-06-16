@@ -135,6 +135,11 @@ class ReminderRepository:
         try:
             reminder = db.query(Reminder).filter(Reminder.id == reminder_id).first()
             if reminder:
+                # Also remove any undelivered PendingNotification for this reminder
+                db.query(PendingNotification).filter(
+                    PendingNotification.reminder_id == reminder_id,
+                    PendingNotification.delivered == False,
+                ).delete(synchronize_session=False)
                 db.delete(reminder)
                 db.commit()
                 return True

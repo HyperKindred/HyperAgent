@@ -1,6 +1,6 @@
 """LangChain tool definitions for schedule CRUD."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import re
 
@@ -27,6 +27,8 @@ def _preprocess_chinese_time(text: str) -> str:
         明天下午3点      → 明天下午3:00
         明天下午3点半    → 明天下午3:30
         明天下午3点15分  → 明天下午3:15
+        今晚10点         → 今天晚上10:00
+        后天上午10点     → 2026-06-18 上午10:00
     """
     # 替换 "X点半" → "X:30"
     text = re.sub(r"(\d+)\s*点半", r"\1:30", text)
@@ -34,6 +36,22 @@ def _preprocess_chinese_time(text: str) -> str:
     text = re.sub(r"(\d+)\s*点\s*(\d+)\s*分", r"\1:\2", text)
     # 替换 "X点" → "X:00" (only if no : already present)
     text = re.sub(r"(\d+)\s*点(?!\d)", r"\1:00", text)
+
+    # 映射 dateparser 不支持的中文缩写时间词
+    text = text.replace('今晚', '今天晚上')
+    text = text.replace('明晚', '明天晚上')
+    text = text.replace('明早', '明天早上')
+    text = text.replace('昨晚', '昨天晚上')
+    text = text.replace('昨早', '昨天早上')
+
+    # 处理 后天/大后天 — dateparser 不认识，替换为绝对日期
+    if '大后天' in text:
+        target = (datetime.now(tz) + timedelta(days=3)).strftime('%Y-%m-%d')
+        text = re.sub(r'大后天\s*', f'{target} ', text)
+    elif '后天' in text:
+        target = (datetime.now(tz) + timedelta(days=2)).strftime('%Y-%m-%d')
+        text = re.sub(r'后天\s*', f'{target} ', text)
+
     return text
 
 
