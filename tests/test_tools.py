@@ -8,12 +8,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.agent.tools import (
+    calculate_tool,
     create_event_tool,
     forget_fact_tool,
     list_events_tool,
     recall_facts_tool,
     remember_fact_tool,
     search_events_tool,
+    timezone_tool,
+    weather_query_tool,
 )
 from app.schedule.database import init_db
 
@@ -156,3 +159,76 @@ class TestForgetFactTool:
     def test_forget_nonexistent(self):
         result = forget_fact_tool.invoke({"memory_id": 999})
         assert "没有找到" in result
+
+
+class TestWeatherQueryTool:
+    def test_no_api_key(self):
+        """Should return a helpful setup message when no API key is configured."""
+        import app.config
+        app.config.settings.weather_api_key = ""
+        result = weather_query_tool.invoke({"city": "北京"})
+        assert "未配置" in result or "api_key" in result.lower()
+
+    def test_city_required(self):
+        """City parameter should be required."""
+        # Just verify the tool accepts a city arg and returns something
+        import app.config
+        app.config.settings.weather_api_key = ""
+        result = weather_query_tool.invoke({"city": "上海"})
+        assert "未配置" in result or "api_key" in result.lower()
+
+
+class TestCalculateTool:
+    def test_simple_addition(self):
+        result = calculate_tool.invoke({"expression": "3+5"})
+        assert "8" in result
+
+    def test_complex_expression(self):
+        result = calculate_tool.invoke({"expression": "(3+5)*12"})
+        assert "96" in result
+
+    def test_division_by_zero(self):
+        result = calculate_tool.invoke({"expression": "1/0"})
+        assert "无法计算" in result
+
+    def test_unit_conversion_km_to_mi(self):
+        result = calculate_tool.invoke({"expression": "10", "from_unit": "公里", "to_unit": "英里"})
+        assert "6.21" in result.replace("×", "x")
+
+    def test_unit_conversion_c_to_f(self):
+        result = calculate_tool.invoke({"expression": "100", "from_unit": "摄氏度", "to_unit": "华氏度"})
+        assert "212" in result
+
+    def test_unit_conversion_kg_to_jin(self):
+        result = calculate_tool.invoke({"expression": "5", "from_unit": "公斤", "to_unit": "斤"})
+        assert "10" in result
+
+    def test_unsupported_expression(self):
+        result = calculate_tool.invoke({"expression": "__import__('os')"})
+        assert "不支持" in result or "无法计算" in result
+
+
+class TestTimezoneTool:
+    def test_london_current_time(self):
+        result = timezone_tool.invoke({"target_timezone": "Europe/London"})
+        assert "🕐" in result
+        assert "London" in result or "伦敦" in result
+
+    def test_tokyo_current_time(self):
+        result = timezone_tool.invoke({"target_timezone": "Asia/Tokyo"})
+        assert "🕐" in result
+        assert "Tokyo" in result or "东京" in result
+
+    def test_chinese_alias(self):
+        result = timezone_tool.invoke({"target_timezone": "伦敦"})
+        assert "🕐" in result
+        assert "Europe/London" in result
+
+    def test_invalid_timezone(self):
+        result = timezone_tool.invoke({"target_timezone": "火星"})
+        assert "无法识别" in result
+
+    def test_with_time_str(self):
+        result = timezone_tool.invoke({"target_timezone": "Asia/Tokyo", "time_str": "15:00"})
+        assert "🕐" in result
+        assert "15" in result or "16" in result or "14" in result

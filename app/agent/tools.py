@@ -14,6 +14,8 @@ from app.memory.repository import MemoryRepository
 from app.schedule.models import EventCreate, EventUpdate
 from app.schedule.repository import ScheduleRepository
 from app.web_search.searcher import search_web
+from app.weather.client import get_weather
+from app.calculator.calc import calculate
 
 repo = ScheduleRepository()
 memory_repo = MemoryRepository()
@@ -477,6 +479,116 @@ def web_search_tool(query: str) -> str:
     return search_web(query, max_results=5, fetch_content=True, max_content_chars=2000)
 
 
+# ── Weather Tool
+
+
+@tool
+def weather_query_tool(city: str) -> str:
+    """查询天气信息。Query current weather for a city.
+
+    当用户问"今天天气怎么样""多少度""会不会下雨""热不热"
+    "北京天气""上海气温""明天天气"等表达时使用。
+    支持中文城市名，如"北京""上海""Tokyo""London"。
+
+    Args:
+        city: 城市名称 / City name (required), e.g. "北京", "Shanghai", "Tokyo"
+
+    Returns:
+        天气信息字符串
+    """
+    return get_weather(city)
+
+
+# ── Calculator Tool
+
+
+@tool
+def calculate_tool(
+    expression: str,
+    from_unit: str = "",
+    to_unit: str = "",
+) -> str:
+    """计算数学表达式或进行单位换算。Calculate math or convert units.
+
+    当用户说"帮我算一下""132×27等于多少""30公里多少英里"
+    "100华氏度是多少摄氏度""100公斤等于多少斤"等表达时使用。
+    也支持普通的加减乘除运算。
+
+    Args:
+        expression: 数学表达式，如 "(3+5)*12"；或数值，如 "30"（配合单位换算）
+        from_unit: 源单位（可选），如 "公里"、"摄氏度"、"公斤"
+        to_unit: 目标单位（可选），如 "英里"、"华氏度"、"斤"
+
+    Returns:
+        计算结果字符串
+    """
+    return calculate(expression, from_unit=from_unit, to_unit=to_unit)
+
+
+# ── Timezone Tool
+
+
+@tool
+def timezone_tool(target_timezone: str, time_str: str = "") -> str:
+    """查询时区时间或进行时区转换。Query time in a timezone or convert between timezones.
+
+    当用户问"伦敦现在几点""纽约时间""东京现在几点了"
+    "北京时间下午3点伦敦是几点""美国现在是几点"等表达时使用。
+
+    Args:
+        target_timezone: 目标时区名称（必填），如 "Europe/London", "America/New_York",
+                         "Asia/Tokyo"。也可用中文简称"伦敦""纽约""东京"
+        time_str: 可选，源时间字符串（本地时间）。如 "下午3点"、"15:00"、
+                  "2026-06-17 15:00"。不传则查询目标时区当前时间
+
+    Returns:
+        时区时间信息字符串
+    """
+    # Chinese timezone name → IANA name mapping
+    _tz_aliases = {
+        "伦敦": "Europe/London", "纽约": "America/New_York",
+        "东京": "Asia/Tokyo", "巴黎": "Europe/Paris",
+        "柏林": "Europe/Berlin", "悉尼": "Australia/Sydney",
+        "洛杉矶": "America/Los_Angeles", "旧金山": "America/Los_Angeles",
+        "新加坡": "Asia/Singapore", "香港": "Asia/Hong_Kong",
+        "首尔": "Asia/Seoul", "迪拜": "Asia/Dubai",
+        "莫斯科": "Europe/Moscow", "曼谷": "Asia/Bangkok",
+    }
+    resolved_tz = _tz_aliases.get(target_timezone, target_timezone)
+
+    try:
+        target_tz = pytz.timezone(resolved_tz)
+    except (pytz.UnknownTimeZoneError, Exception):
+        return f"❌ 无法识别的时区：{target_timezone}。请使用 IANA 时区名称，如 'Europe/London'。"
+
+    now_local = datetime.now(tz)
+
+    if time_str:
+        # Parse the source time as local time
+        parsed = _parse_time(time_str)
+        if parsed is None:
+            return f"❌ 无法解析时间：{time_str}"
+        # Interpret the parsed naive time as local time
+        local_dt = tz.localize(parsed)
+        target_dt = local_dt.astimezone(target_tz)
+        offset_hours = (target_dt.utcoffset().total_seconds() - local_dt.utcoffset().total_seconds()) // 3600
+        diff_str = f"（{'早' if offset_hours < 0 else '晚'}{abs(int(offset_hours))} 小时）"
+
+        target_time_str = target_dt.strftime("%Y-%m-%d %H:%M")
+        local_time_str = local_dt.strftime("%Y-%m-%d %H:%M")
+        return (
+            f"🕐 **{resolved_tz}** 时间查询\n"
+            f"   本地时间 {local_time_str} = {resolved_tz} 时间 {target_time_str}{diff_str}"
+        )
+    else:
+        # Just show current time in target timezone
+        now_target = now_local.astimezone(target_tz)
+        offset_hours = (now_target.utcoffset().total_seconds() - now_local.utcoffset().total_seconds()) // 3600
+        diff_str = f"（{'早' if offset_hours < 0 else '晚'}{abs(int(offset_hours))} 小时）"
+
+        return f"🕐 **{resolved_tz}** 当前时间：{now_target.strftime('%Y-%m-%d %H:%M')}{diff_str}"
+
+
 # ── Reminder Tools ──────────────────────────────────────────────────────
 
 
@@ -627,5 +739,8 @@ ALL_TOOLS = [
     create_reminder_tool,
     list_reminders_tool,
     delete_reminder_tool,
+    weather_query_tool,
+    calculate_tool,
+    timezone_tool,
 ]
 

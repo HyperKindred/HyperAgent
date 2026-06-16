@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Weather API (OpenWeatherMap)
+    weather_api_key: str = ""
+    weather_base_url: str = "https://api.openweathermap.org/data/2.5"
+
 
 settings = Settings()
 
