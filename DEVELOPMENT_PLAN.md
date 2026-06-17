@@ -160,7 +160,7 @@ renderMarkdown() 只处理了加粗和换行。system prompt 中大量使用的 
 - [x] 一键启动：Electron 桌面应用骨架（系统托盘 + 原生通知，`npm run electron:dev`）
 - [x] 多模态支持
 - [x] 文件上传处理（上传 PDF / Word / TXT / 图片给 agent 分析）
-- [ ] 第三方集成（Notion，邮件）
+- [x] 第三方集成（GitHub / Notion / QQ 邮箱）
 
 > 🔐 用户认证（API key 鉴权）已从路线图中移除。单人本地模式无需此功能。
 > 未来需要暴露到网络时可快速添加（预计工作量 ~30 分钟）。
