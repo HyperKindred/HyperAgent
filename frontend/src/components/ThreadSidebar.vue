@@ -10,6 +10,7 @@ import {
   renameThreadById,
 } from '../store/chat'
 import { fetchEventsByMonth, type EventItem } from '../api/client'
+import { calendarChangeSignal } from '../store/calendar'
 
 const route = useRoute()
 const router = useRouter()
@@ -97,6 +98,13 @@ function isSelected(day: number | null) {
 }
 
 watch(currentMonth, loadMonth)
+
+// Reload events when CalendarView changes data
+watch(calendarChangeSignal, () => {
+  if (currentRoute.value === 'calendar') {
+    loadMonth()
+  }
+})
 
 // ── Thread logic ──────────────────────────────────────────────────
 

@@ -10,6 +10,7 @@ import {
   type ReminderItem,
 } from '../api/client'
 import { Plus, Bell, Trash2 } from '@lucide/vue'
+import { notifyCalendarChange } from '../store/calendar'
 
 const route = useRoute()
 
@@ -97,6 +98,7 @@ async function handleDelete(id: number) {
     await deleteEvent(id)
     events.value = events.value.filter(e => e.id !== id)
     delConfirmId.value = null
+    notifyCalendarChange()
   } catch {}
 }
 
@@ -123,6 +125,7 @@ async function handleAdd() {
     newDesc.value = ''
     newPriority.value = 'normal'
     await loadMonth()
+    notifyCalendarChange()
   } catch {}
 }
 
