@@ -90,11 +90,22 @@ class ThreadRepository:
             thread = db.query(Thread).filter(Thread.id == thread_id).first()
             if thread:
                 thread.updated_at = datetime.utcnow()
-                thread.message_count = Thread.message_count + 1
+                thread.message_count = (thread.message_count or 0) + 1
                 db.commit()
         finally:
             if self._db is None:
                 db.close()
+
+    def get_or_create(self, thread_id: str, title: str = "新对话") -> Thread:
+        """Return an existing thread or create a new one.
+
+        Called when a message is sent to a thread_id that doesn't have
+        metadata yet (e.g. the first message in a brand-new conversation).
+        """
+        thread = self.get_by_id(thread_id)
+        if thread:
+            return thread
+        return self.create(ThreadCreate(thread_id=thread_id, title=title))
 
     # ── Delete ──────────────────────────────────────────────────────
 

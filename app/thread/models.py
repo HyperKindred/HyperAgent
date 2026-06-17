@@ -7,7 +7,7 @@ conversation state managed by LangGraph/SqliteSaver).
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from sqlalchemy import Column, DateTime, Integer, String
 
 from app.schedule.database import Base
@@ -43,3 +43,21 @@ class ThreadResponse(BaseModel):
     model: str
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def _append_z(cls, dt: datetime) -> str:
+        """Serialize datetime as ISO 8601 with ``Z`` suffix for UTC.
+
+        The database stores naive UTC datetimes.  Pydantic v2 serializes
+        them without timezone info, causing JavaScript ``new Date()`` to
+        interpret them as local time (a shift of the timezone offset).
+        Appending ``Z`` tells the client they are UTC.
+        """
+        s = dt.isoformat()
+        if dt.tzinfo is None:
+            s += "Z"
+        return s
+
+    @field_serializer("created_at", "updated_at")
+    def serialize_datetime(self, dt: datetime) -> str:
+        return self._append_z(dt)

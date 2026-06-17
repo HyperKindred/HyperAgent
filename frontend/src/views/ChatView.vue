@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, computed } from 'vue'
 import { marked } from 'marked'
-import { sendChatStream } from '../api/client'
-import { chatStore, initWelcomeMessage, clearChat } from '../store/chat'
-import { MessageSquare, Plus, Send, Square, Paperclip, FileText, Code, File, X, Image as ImageIcon } from '@lucide/vue'
+import { sendChatStream, createThread } from '../api/client'
+import { chatStore, initWelcomeMessage, loadThreadList } from '../store/chat'
+import { MessageSquare, Send, Square, Paperclip, FileText, Code, File, X, Image as ImageIcon } from '@lucide/vue'
 
 const input = ref('')
 const loading = ref(false)
@@ -24,15 +24,6 @@ onMounted(() => {
   initWelcomeMessage()
   scrollToBottom()
 })
-
-async function handleNewChat() {
-  await clearChat()
-  initWelcomeMessage()
-  pendingImages.value = []
-  pendingFiles.value = []
-  await nextTick()
-  scrollToBottom()
-}
 
 function compressImage(file: File, maxSize = 1024, quality = 0.7): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -158,6 +149,17 @@ async function handleSend() {
   const hasFiles = pendingFiles.value.length > 0
   if ((!text && !hasImages && !hasFiles) || loading.value) return
 
+  // Auto-create a thread if none exists (e.g. after deleting all threads)
+  if (!chatStore.threadId) {
+    try {
+      const newId = await createThread()
+      chatStore.threadId = newId
+      localStorage.setItem('hyperagent-thread', newId)
+    } catch {
+      chatStore.threadId = `hyperagent-${Date.now().toString(36)}`
+    }
+  }
+
   const imagesToSend = hasImages ? [...pendingImages.value] : undefined
   const filesToSend = hasFiles ? [...pendingFiles.value] : undefined
 
@@ -202,6 +204,8 @@ async function handleSend() {
     }
   } finally {
     loading.value = false
+    // Refresh sidebar ordering — this thread's updated_at just changed
+    await loadThreadList()
     await nextTick()
     scrollToBottom()
   }
@@ -247,10 +251,6 @@ function autoResize(e: Event) {
     <!-- Header -->
     <div class="chat-header">
       <h2><MessageSquare :size="20" /> 对话</h2>
-      <button class="btn-new-chat" @click="handleNewChat" title="开启新对话">
-        <Plus :size="16" />
-        <span>新对话</span>
-      </button>
     </div>
 
     <!-- Messages -->
@@ -366,9 +366,6 @@ function autoResize(e: Event) {
   padding: 16px 28px;
   border-bottom: 1px solid #eef0f4;
   flex-shrink: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .chat-header h2 {
@@ -379,26 +376,6 @@ function autoResize(e: Event) {
   align-items: center;
   gap: 8px;
   color: #1f2937;
-}
-
-.btn-new-chat {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: transparent;
-  color: #9ca3af;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.btn-new-chat:hover {
-  background: #f9fafb;
-  color: #6366f1;
-  border-color: #c7d2fe;
 }
 
 /* ── Messages ───────────────────────────────────────────── */

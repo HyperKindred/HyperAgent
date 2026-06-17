@@ -1,13 +1,11 @@
 """Chat REST endpoints."""
 
-import uuid
-import json
-
 from pydantic import BaseModel
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.agent.graph import run_agent, stream_agent
+from app.thread.repository import ThreadRepository
 
 router = APIRouter()
 
@@ -32,13 +30,10 @@ class ChatResponse(BaseModel):
     reply: str
 
 
-class ThreadResponse(BaseModel):
-    thread_id: str
-
-
 @router.post("/chat")
 def chat(request: ChatRequest) -> ChatResponse:
     """Send a message to a specific agent thread and get a reply."""
+    _ensure_thread(request.thread_id)
     reply = run_agent(
         request.message,
         thread_id=request.thread_id,
@@ -58,6 +53,7 @@ async def chat_stream(request: ChatRequest):
     - ``{"type": "token", "content": "..."}`` — one token of the reply
     - ``{"type": "done"}`` — the agent has finished
     """
+    _ensure_thread(request.thread_id)
     return StreamingResponse(
         stream_agent(request.message, thread_id=request.thread_id, model=request.model, images=request.images or None, files=[f.model_dump() for f in request.files] if request.files else None),
         media_type="text/event-stream",
@@ -68,15 +64,13 @@ async def chat_stream(request: ChatRequest):
     )
 
 
-@router.post("/threads")
-def new_thread() -> ThreadResponse:
-    """Create a new conversation thread and return its ID."""
-    from app.thread.models import ThreadCreate
-    from app.thread.repository import ThreadRepository
+def _ensure_thread(thread_id: str) -> None:
+    """Bump the thread timestamp after a message is sent.
 
-    thread_id = f"hyperagent-{uuid.uuid4().hex[:8]}"
+    Only updates metadata that was explicitly created via ``POST /threads``;
+    does NOT auto-create metadata for ad-hoc thread IDs like ``hyperagent-main``.
+    """
     repo = ThreadRepository()
-    repo.create(ThreadCreate(thread_id=thread_id))
-    return ThreadResponse(thread_id=thread_id)
+    repo.touch(thread_id)
 
 

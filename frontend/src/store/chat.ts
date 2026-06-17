@@ -87,15 +87,23 @@ export function initWelcomeMessage() {
 
 // ── Thread management ───────────────────────────────────────────────
 
+/** Thread IDs always start with ``hyperagent-`` — reject anything else. */
+function isValidThreadId(id: unknown): id is string {
+  return typeof id === 'string' && id.startsWith('hyperagent-')
+}
+
 export async function loadThreadList() {
   try {
-    chatStore.threads = await listThreads()
+    const list = await listThreads()
+    // Filter out threads with invalid IDs (e.g. corrupted "undefined" strings)
+    chatStore.threads = (list || []).filter((t: any) => t && isValidThreadId(t.id))
   } catch {
     // Offline — keep existing list
   }
 }
 
 export async function switchThread(threadId: string) {
+  if (!isValidThreadId(threadId)) return
   if (threadId === chatStore.threadId) return
 
   // Save current thread messages
@@ -145,12 +153,15 @@ export async function clearChat() {
   }
   chatStore.messages.splice(0)
   removeMessagesForThread(chatStore.threadId)
+  // Clear localStorage for old thread ID to prevent stale message cache
+  removeMessagesForThread(loadThreadId())
   _initialized = false
   initWelcomeMessage()
   await loadThreadList()
 }
 
 export async function deleteThreadById(threadId: string) {
+  if (!isValidThreadId(threadId)) return
   try {
     await apiDeleteThread(threadId)
   } catch {
@@ -165,16 +176,24 @@ export async function deleteThreadById(threadId: string) {
     if (next) {
       await switchThread(next.id)
     } else {
-      await clearChat()
+      // All threads deleted → show fresh welcome without creating a thread.
+      // A new thread will be auto-created on first message send.
+      chatStore.threadId = ''
+      localStorage.removeItem(THREAD_STORAGE_KEY)
+      chatStore.messages.splice(0)
+      removeMessagesForThread(threadId)
+      _initialized = false
+      initWelcomeMessage()
     }
   }
 }
 
 export async function renameThreadById(threadId: string, title: string) {
+  if (!isValidThreadId(threadId)) return
   try {
     await apiRenameThread(threadId, title)
-    const t = chatStore.threads.find(t => t.id === threadId)
-    if (t) t.title = title
+    // Refresh ordering — other threads may have been touched since
+    await loadThreadList()
   } catch {
     // Ignore
   }
@@ -216,8 +235,8 @@ function removeMessagesForThread(threadId: string) {
 
 function loadThreadId(): string {
   try {
-    return localStorage.getItem(THREAD_STORAGE_KEY) || 'hyperagent-main'
+    return localStorage.getItem(THREAD_STORAGE_KEY) || ''
   } catch {
-    return 'hyperagent-main'
+    return ''
   }
 }

@@ -28,6 +28,9 @@ def init_db():
     # Add columns that were introduced after the initial schema.
     _migrate_add_column("reminders", "event_id", "INTEGER")
 
+    # Fix any threads with null timestamps (from earlier versions)
+    _migrate_fix_null_timestamps("threads")
+
 
 def _migrate_add_column(table: str, column: str, col_type: str) -> None:
     """Add a column if it doesn't exist (SQLite-safe)."""
@@ -42,6 +45,34 @@ def _migrate_add_column(table: str, column: str, col_type: str) -> None:
                 conn.commit()
         except Exception:
             pass
+
+
+def _migrate_fix_null_timestamps(table: str) -> None:
+    """Fix rows where created_at or updated_at is NULL (from earlier dev versions)."""
+    from datetime import datetime
+    try:
+        existing = {c["name"] for c in sa_inspect(engine).get_columns(table)}
+    except Exception:
+        return
+    has_created = "created_at" in existing
+    has_updated = "updated_at" in existing
+    if not has_created and not has_updated:
+        return
+    try:
+        with engine.connect() as conn:
+            if has_created:
+                conn.execute(
+                    text(f"UPDATE {table} SET created_at = :now WHERE created_at IS NULL"),
+                    {"now": datetime.utcnow()}
+                )
+            if has_updated:
+                conn.execute(
+                    text(f"UPDATE {table} SET updated_at = :now WHERE updated_at IS NULL"),
+                    {"now": datetime.utcnow()}
+                )
+            conn.commit()
+    except Exception:
+        pass
 
 
 def get_session():
