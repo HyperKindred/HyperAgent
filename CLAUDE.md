@@ -7,7 +7,7 @@
 ```bash
 # Python 后端 — 全部通过 uv
 uv sync                                                    # 安装后端依赖
-uv run pytest                                              # 运行全部测试（39 个）
+uv run pytest                                              # 运行全部测试（124 个）
 uv run pytest tests/test_memory_repository.py -v           # 记忆仓库测试
 uv run pytest tests/test_tools.py -v                       # 工具测试（含记忆工具）
 uv run pytest tests/test_schedule_repository.py -v         # 日程仓库测试
@@ -147,12 +147,15 @@ CalendarView.vue → GET /api/events → ScheduleRepository → SQLite（hyperag
 
 工具定义在 `app/agent/tools.py`。每个工具是一个 `@tool` 装饰的函数。**docstring 必须中英双语**，并包含中文触发短语，确保 DeepSeek 能根据中文输入正确选择工具。所有工具注册在 `ALL_TOOLS` 列表中。
 
-当前 11 个工具：
-- `create_event_tool` / `list_events_tool` / `update_event_tool` / `delete_event_tool` / `search_events_tool` / `clear_expired_events_tool` / `get_current_datetime_tool`
-- `web_search_tool`（DuckDuckGo → Bing 多后端搜索）
-- `remember_fact_tool`（记住叙事内容，自动生成 embedding）
-- `recall_facts_tool`（RAG 语义搜索，top-5 相关记忆）
-- `forget_fact_tool`（按 ID 删除记忆）
+当前 30 个工具：
+- **日程 CRUD（7 个）**— `create_event_tool` / `list_events_tool` / `update_event_tool` / `delete_event_tool` / `search_events_tool` / `clear_expired_events_tool` / `get_current_datetime_tool`
+- **网络搜索（1 个）**— `web_search_tool`（DuckDuckGo → Bing 多后端搜索）
+- **记忆工具（3 个）**— `remember_fact_tool` / `recall_facts_tool` / `forget_fact_tool`
+- **天气/计算器/时区（3 个）**— `weather_query_tool` / `calculate_tool` / `timezone_tool`
+- **定时提醒（3 个）**— `create_reminder_tool` / `list_reminders_tool` / `delete_reminder_tool`
+- **GitHub（5 个）**— `github_list_notifications_tool` / `github_search_issues_tool` / `github_create_issue_tool` / `github_get_issue_tool` / `github_list_issues_tool`
+- **Notion（4 个）**— `notion_search_tool` / `notion_read_page_tool` / `notion_create_page_tool` / `notion_query_database_tool`
+- **QQ 邮箱（4 个）**— `send_email_tool` / `list_emails_tool` / `search_emails_tool` / `read_email_tool`
 
 添加新工具：
 ```python
@@ -232,8 +235,13 @@ Vue Router 有两个视图：`/`（ChatView 对话页）和 `/calendar`（Calend
 | `llm_*` | 聊天 API（OpenCode / OpenAI 兼容接口） |
 | `vision_model` | 多模态模型名 |
 | `embedding_*` | 向量化 API（OpenRouter / OpenAI 兼容接口） |
-| `deepseek_*` | 旧配置兜底，`embedding_api_key` 为空时自动回退 |
+| `github_*` | GitHub Personal Access Token |
+| `notion_*` | Notion Integration Token |
+| `qq_email_*` | QQ 邮箱地址与授权码 |
+| `weather_*` | OpenWeatherMap API Key |
 | `search_engine_url` | 可选的自定义搜索引擎 URL |
+| `timezone` | 时区（默认 Asia/Shanghai） |
+| `log_level` | 日志级别 |
 | `max_history_messages` | 对话历史裁剪阈值（默认 40） |
 
 ### REST API 路由
@@ -246,6 +254,12 @@ Vue Router 有两个视图：`/`（ChatView 对话页）和 `/calendar`（Calend
 | `POST /api/events` | 创建日程 |
 | `PUT /api/events/{id}` | 更新日程 |
 | `DELETE /api/events/{id}` | 删除日程 |
+| `GET /api/reminders` | 获取提醒列表 |
+| `POST /api/reminders` | 创建提醒 |
+| `DELETE /api/reminders/{id}` | 删除提醒 |
+| `GET /api/threads` | 获取对话线程列表 |
+| `POST /api/threads` | 创建新线程 |
+| `GET /api/health` | 健康检查 |
 
 所有 REST 操作写 `CalendarNotification` 表，agent 调用前通过 `drain_notifications()` 消费并注入提示词，实现跨渠道操作同步。
 
@@ -261,9 +275,9 @@ Vue Router 有两个视图：`/`（ChatView 对话页）和 `/calendar`（Calend
 6. **REST 优先** — 每个 agent 工具都配套 REST API，前端可直接调用
 7. **体验驱动** — 技术决策优先考虑使用感受，而非技术炫技
 
-## 已知问题（Phase 1 待修复）
+## 已知问题
 
-来自 DEVELOPMENT_PLAN.md 中标记为【急需修复】的问题，部分已修复：
+来自 DEVELOPMENT_PLAN.md 中标记为待修复的问题已全部在 Phase 1-2 中解决：
 
 - [x] Session context manager 重构（消除泄漏风险）
 - [x] 前端"新对话"调用后端创建真实 thread
@@ -272,11 +286,7 @@ Vue Router 有两个视图：`/`（ChatView 对话页）和 `/calendar`（Calend
 - [x] Streaming 响应（SSE + 前端逐 token 渲染）
 - [x] 前端 markdown 渲染升级
 - [x] Agent 实例缓存优化
-
-剩余待处理（P2 建议修）：
-- [ ] Embedding API 无重试（`get_embedding()` 直接用 requests.post，无重试逻辑）
-- [ ] 工具返回错误字符串被 LLM 当作成功（不可恢复错误应 raise ValueError 而非 return string）
-- [ ] Agent 每次请求都重建（`build_agent()` 每次创建新实例，约 100ms 开销）
+- [x] 三个第三方集成（GitHub / Notion / QQ 邮箱）
 
 ## 添加新功能
 
