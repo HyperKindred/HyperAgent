@@ -722,6 +722,295 @@ def delete_reminder_tool(reminder_id: int) -> str:
     return f"❌ 删除提醒失败 (ID: {reminder_id})"
 
 
+# ── GitHub Tools ──────────────────────────────────────────────────────
+
+
+@tool
+def github_list_notifications_tool() -> str:
+    """查看 GitHub 未读通知。List unread GitHub notifications.
+
+    当用户说"GitHub通知""看看GitHub""有没有新的通知""查看通知""PR有更新吗"
+    等表达时使用。会列出所有未读通知，包括 PR review、issue 回复等。
+
+    Returns:
+        通知列表字符串
+    """
+    from app.github.client import get_notifications
+    return get_notifications()
+
+
+@tool
+def github_search_issues_tool(
+    query: str,
+    repo: str = "",
+    state: str = "open",
+) -> str:
+    """搜索 GitHub Issue 和 Pull Request。Search issues and PRs on GitHub.
+
+    当用户说"搜一下issue""找PR""查问题""搜索仓库""GitHub上搜一下"
+    等表达时使用。支持按仓库和状态过滤。
+
+    Args:
+        query: 搜索关键词 / Search keywords (required)
+        repo: 仓库名（可选）/ Repository "owner/repo" (optional),
+              如 "HyperKindred/HyperAgent"
+        state: 状态 / State: "open", "closed", "all" (默认 "open")
+
+    Returns:
+        搜索结果字符串
+    """
+    from app.github.client import search_issues
+    return search_issues(query=query, repo=repo, state=state)
+
+
+@tool
+def github_create_issue_tool(
+    repo: str,
+    title: str,
+    body: str = "",
+) -> str:
+    """在 GitHub 仓库创建 Issue。Create an issue on GitHub.
+
+    当用户说"提issue""创建issue""报告bug""提交问题""在XX仓库发issue"
+    等表达时使用。需要仓库名（owner/repo 格式）和标题。
+
+    Args:
+        repo: 仓库名 / Repository (required), 如 "HyperKindred/HyperAgent"
+        title: Issue 标题 / Issue title (required)
+        body: Issue 描述 / Issue body (可选)
+
+    Returns:
+        创建确认字符串（含链接）
+    """
+    from app.github.client import create_issue
+    return create_issue(repo=repo, title=title, body=body)
+
+
+@tool
+def github_get_issue_tool(
+    repo: str,
+    issue_number: int,
+) -> str:
+    """查看 GitHub Issue 或 PR 详情。Get details of a specific issue or PR.
+
+    当用户说"查看issue""看这个PR""看看详情""打开issue #123"
+    等表达时使用。需要仓库名和 issue/PR 编号。
+
+    Args:
+        repo: 仓库名 / Repository (required), 如 "HyperKindred/HyperAgent"
+        issue_number: Issue 或 PR 编号 / Issue or PR number (required)
+
+    Returns:
+        Issue/PR 详情字符串
+    """
+    from app.github.client import get_issue
+    return get_issue(repo=repo, issue_number=issue_number)
+
+
+@tool
+def github_list_issues_tool(
+    repo: str,
+    state: str = "open",
+) -> str:
+    """列出 GitHub 仓库的 Issue 和 PR。List issues and PRs for a repo.
+
+    当用户说"列出issue""仓库动态""最近PR""看看XX仓库的问题"
+    等表达时使用。
+
+    Args:
+        repo: 仓库名 / Repository (required), 如 "HyperKindred/HyperAgent"
+        state: 状态 / State: "open", "closed", "all" (默认 "open")
+
+    Returns:
+        Issue 列表字符串
+    """
+    from app.github.client import list_repo_issues
+    return list_repo_issues(repo=repo, state=state)
+
+
+# ── Notion Tools ──────────────────────────────────────────────────────
+
+
+@tool
+def notion_search_tool(query: str) -> str:
+    """搜索 Notion 页面和数据库。Search Notion pages and databases.
+
+    当用户说"搜一下Notion""找笔记""查页面""Notion上搜XX"
+    等表达时使用。按标题搜索匹配的页面和数据库。
+
+    Args:
+        query: 搜索关键词 / Search keyword (required)
+
+    Returns:
+        搜索结果字符串
+    """
+    from app.notion.client import search_pages
+    return search_pages(query=query)
+
+
+@tool
+def notion_read_page_tool(page_id: str) -> str:
+    """读取 Notion 页面完整内容。Read the full content of a Notion page.
+
+    当用户说"看这个页面""打开看看""读取页面""阅读笔记"
+    等表达时使用。需要页面 ID，可从 notion_search_tool 的结果中获取。
+
+    Args:
+        page_id: 页面 ID / Page ID (required)，32 位 UUID 格式（可从搜索或 URL 获取）
+
+    Returns:
+        页面完整内容字符串
+    """
+    from app.notion.client import get_page_content
+    return get_page_content(page_id=page_id)
+
+
+@tool
+def notion_create_page_tool(
+    title: str,
+    content: str = "",
+    parent_page_id: str = "",
+) -> str:
+    """在 Notion 创建新页面。Create a new page in Notion.
+
+    当用户说"创建页面""写笔记""记到Notion""在新页面记录"
+    等表达时使用。需要页面标题和父页面 ID。
+
+    Args:
+        title: 页面标题 / Page title (required)
+        content: 页面内容（可选）/ Page content (optional)，纯文本，会自动转换为 Notion block
+        parent_page_id: 父页面 ID / Parent page ID (required)，
+                        可在 Notion URL 中或通过 notion_search_tool 获取
+
+    Returns:
+        创建确认字符串（含链接）
+    """
+    from app.notion.client import create_page
+    return create_page(title=title, content=content, parent_page_id=parent_page_id)
+
+
+@tool
+def notion_query_database_tool(
+    database_id: str,
+    filter_text: str = "",
+    per_page: int = 10,
+) -> str:
+    """查询 Notion 数据库。Query a Notion database.
+
+    当用户说"查数据库""查询表格""看数据库""查看Notion表格"
+    等表达时使用。需要数据库 ID。
+
+    Args:
+        database_id: 数据库 ID / Database ID (required)，32 位 UUID 格式
+        filter_text: 过滤关键词（可选），按标题搜索
+        per_page: 返回条数 / Results per page (可选，默认 10)
+
+    Returns:
+        数据库条目列表字符串
+    """
+    from app.notion.client import query_database
+    return query_database(database_id=database_id, filter_text=filter_text, per_page=per_page)
+
+
+# ── QQ Email Tools ────────────────────────────────────────────────────
+
+
+@tool
+def send_email_tool(
+    to_address: str,
+    subject: str,
+    body: str,
+) -> str:
+    """发送电子邮件。Send an email via QQ email.
+
+    当用户说"发邮件""发送邮件""给XX发邮件""写邮件""帮我发一封邮件"
+    等表达时使用。需要提供收件人地址、主题和正文内容。
+
+    Args:
+        to_address: 收件人邮箱地址 / Recipient email address (required)
+        subject: 邮件主题 / Email subject (required)，支持中文
+        body: 邮件正文 / Email body text (required)，支持中文
+
+    Returns:
+        发送结果确认字符串
+    """
+    from app.email.client import send_email
+    return send_email(to_address=to_address, subject=subject, body=body)
+
+
+@tool
+def list_emails_tool(
+    folder: str = "INBOX",
+    max_results: int = 10,
+) -> str:
+    """查看邮件列表。List recent emails from a mailbox folder.
+
+    当用户说"查看邮件""收件箱""有没有新邮件""我的邮件""看邮件"
+    等表达时使用。默认查看收件箱（INBOX）。
+
+    常用文件夹：INBOX（收件箱）、已发送、垃圾箱、草稿箱、已删除。
+
+    Args:
+        folder: 文件夹名称 / Folder name (可选，默认 "INBOX")，
+                支持中文如"已发送""垃圾箱"
+        max_results: 返回邮件数量 / Max results to return (可选，默认 10)
+
+    Returns:
+        邮件列表字符串
+    """
+    from app.email.client import list_emails
+    return list_emails(folder=folder, max_results=max_results)
+
+
+@tool
+def search_emails_tool(
+    keyword: str,
+    folder: str = "INBOX",
+    max_results: int = 10,
+) -> str:
+    """搜索邮件。Search emails by keyword in the subject.
+
+    当用户说"搜索邮件""找邮件""查找邮件""搜一下邮件""找XX的邮件"
+    等表达时使用。按邮件主题搜索关键词。
+
+    注意：QQ邮箱的 IMAP 搜索对中文关键词支持有限，中文搜索可能不精确。
+    建议同时使用英文关键词或在搜索结果中手动查找。
+
+    Args:
+        keyword: 搜索关键词 / Search keyword (required)
+        folder: 搜索的文件夹 / Folder to search (可选，默认 "INBOX")
+        max_results: 最大返回数量 / Max results (可选，默认 10)
+
+    Returns:
+        搜索结果字符串
+    """
+    from app.email.client import search_emails
+    return search_emails(keyword=keyword, folder=folder, max_results=max_results)
+
+
+@tool
+def read_email_tool(
+    message_id: int,
+    folder: str = "INBOX",
+) -> str:
+    """阅读邮件正文。Read the full content of a specific email.
+
+    当用户说"查看邮件详情""阅读邮件""打开邮件""看这封邮件""看看内容"
+    等表达时使用。需要提供邮件 ID，该 ID 可从 list_emails_tool 或
+    search_emails_tool 的结果中获取（方括号中的数字）。
+
+    Args:
+        message_id: 邮件 ID（数字）/ Email message ID (required)，
+                    可从邮件列表结果中获取
+        folder: 邮件所在文件夹 / Folder name (可选，默认 "INBOX")
+
+    Returns:
+        邮件完整内容字符串
+    """
+    from app.email.client import read_email
+    return read_email(message_id=message_id, folder=folder)
+
+
 # ── Tool Registry ────────────────────────────────────────────────────
 
 ALL_TOOLS = [
@@ -742,5 +1031,21 @@ ALL_TOOLS = [
     weather_query_tool,
     calculate_tool,
     timezone_tool,
+    # GitHub
+    github_list_notifications_tool,
+    github_search_issues_tool,
+    github_create_issue_tool,
+    github_get_issue_tool,
+    github_list_issues_tool,
+    # Notion
+    notion_search_tool,
+    notion_read_page_tool,
+    notion_create_page_tool,
+    notion_query_database_tool,
+    # QQ Email
+    send_email_tool,
+    list_emails_tool,
+    search_emails_tool,
+    read_email_tool,
 ]
 

@@ -56,6 +56,17 @@ class Settings(BaseSettings):
     weather_api_key: str = ""
     weather_base_url: str = "https://api.openweathermap.org/data/2.5"
 
+    # GitHub Integration
+    github_token: str = ""
+    github_username: str = ""
+
+    # Notion Integration
+    notion_token: str = ""
+
+    # QQ Email Integration
+    qq_email_address: str = ""
+    qq_email_auth_code: str = ""
+
 
 settings = Settings()
 

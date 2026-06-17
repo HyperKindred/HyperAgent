@@ -154,9 +154,9 @@ renderMarkdown() 只处理了加粗和换行。system prompt 中大量使用的 
 目标：agent 从"你问我答"变成"会主动找你"。
 
 - [x] 定时提醒与通知系统（APScheduler + SQLite）
-- [ ] 天气/新闻等更多工具
+- [x] 天气/新闻等更多工具
 - [x] Web 搜索工具（搜索 + 内容摘要）
-- [ ] 多线程对话管理（前端显示历史线程列表）
+- [x] 多线程对话管理（前端显示历史线程列表）
 - [x] 一键启动：Electron 桌面应用骨架（系统托盘 + 原生通知，`npm run electron:dev`）
 - [x] 多模态支持
 - [x] 文件上传处理（上传 PDF / Word / TXT / 图片给 agent 分析）
