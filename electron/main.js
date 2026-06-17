@@ -3,6 +3,17 @@ const { spawn } = require('child_process')
 const path = require('path')
 const net = require('net')
 
+// ── Filter known-harmless libpng warnings from Electron's internal PNGs ─
+const origWrite = process.stderr.write.bind(process.stderr)
+process.stderr.write = (chunk, encoding, callback) => {
+  const str = chunk.toString()
+  if (str.includes('libpng warning: iCCP: known incorrect sRGB profile')) {
+    if (typeof callback === 'function') callback()
+    return true
+  }
+  return origWrite(chunk, encoding, callback)
+}
+
 // ── Configuration ──────────────────────────────────────────────────────
 const DEV = process.env.NODE_ENV === 'development' || process.argv.includes('--dev')
 const PORT = 8000
