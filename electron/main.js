@@ -6,7 +6,7 @@ const http = require('http')
 // ── Configuration ──────────────────────────────────────────────────────
 const DEV = process.env.NODE_ENV === 'development' || process.argv.includes('--dev')
 const PORT = 8000
-const VITE_DEV_PORT = 5174
+const VITE_DEV_PORTS = [5174, 5175, 5176, 5177, 5178]
 const IS_WINDOWS = process.platform === 'win32'
 
 const REPO_ROOT = path.resolve(__dirname, '..')
@@ -55,20 +55,49 @@ function killAllChildren() {
 }
 
 // ── Backend health check ───────────────────────────────────────────────
-function waitForBackend(retries = 30, interval = 500) {
+function waitForBackend(retries = 60, interval = 500) {
   return new Promise((resolve, reject) => {
     const check = (attempt) => {
-      http.get(`http://localhost:${PORT}/api/events`, (res) => {
+      const req = http.get(`http://localhost:${PORT}/api/health`, (res) => {
+        // Any response (even 404) means the server is up
         resolve()
-      }).on('error', () => {
+      })
+      req.on('error', () => {
         if (attempt >= retries) {
-          reject(new Error(`Backend not ready after ${retries} retries`))
+          reject(new Error(`Backend not ready after ${retries} retries (${Math.round(retries * interval / 1000)}s)`))
         } else {
           setTimeout(() => check(attempt + 1), interval)
         }
       })
+      req.end()
     }
     check(0)
+  })
+}
+
+// ── Find active Vite dev port ─────────────────────────────────────────
+function findVitePort() {
+  return new Promise((resolve) => {
+    let idx = 0
+    const tryNext = () => {
+      if (idx >= VITE_DEV_PORTS.length) {
+        console.warn('[electron] No Vite dev server found, trying default port')
+        resolve(VITE_DEV_PORTS[0])
+        return
+      }
+      const p = VITE_DEV_PORTS[idx]
+      const req = http.get(`http://localhost:${p}`, (res) => {
+        res.resume()
+        console.log(`[electron] Found Vite dev server on port ${p}`)
+        resolve(p)
+      })
+      req.on('error', () => {
+        idx++
+        tryNext()
+      })
+      req.end()
+    }
+    tryNext()
   })
 }
 
@@ -101,7 +130,9 @@ function createWindow() {
 
   // Dev or production URL
   if (DEV) {
-    mainWindow.loadURL(`http://localhost:${VITE_DEV_PORT}`)
+    // Vite port is set before createWindow() is called
+    const vitePort = global.__vitePort || VITE_DEV_PORTS[0]
+    mainWindow.loadURL(`http://localhost:${vitePort}`)
     // DevTools: press F12 to open, not auto-open
   } else {
     mainWindow.loadURL(`http://localhost:${PORT}`)
@@ -191,7 +222,7 @@ ipcMain.on('show-notification', (_event, { title, body }) => {
   }
 })
 
-// ── App lifecycle ──────────────────────────────────────────────────────
+	// ── App lifecycle ──────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   // 1. Start backend
   spawnBackend()
@@ -205,7 +236,13 @@ app.whenReady().then(async () => {
     // Continue anyway — the window will show an error message
   }
 
-  // 3. Create window and tray
+  // 3. Detect Vite dev port (dev mode only)
+  if (DEV) {
+    const vitePort = await findVitePort()
+    global.__vitePort = vitePort
+  }
+
+  // 4. Create window and tray
   createWindow()
   createTray()
 })

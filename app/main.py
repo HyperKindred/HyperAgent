@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import chat, reminder as reminder_api, schedule
@@ -35,7 +35,12 @@ app = FastAPI(
 # Allow Vue dev server (localhost:5173) to call the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
+    allow_origins=[
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:5174", "http://127.0.0.1:5174",
+        "http://localhost:5175", "http://127.0.0.1:5175",
+        "http://localhost:5176", "http://127.0.0.1:5176",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,6 +51,15 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(schedule.router, prefix="/api", tags=["schedule"])
 app.include_router(reminder_api.router, prefix="/api", tags=["reminder"])
 app.include_router(thread_api.router, prefix="/api", tags=["thread"])
+
+
+# ── Health check ──────────────────────────────────────────────────────
+
+
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint for Electron and monitoring."""
+    return JSONResponse({"status": "ok", "version": "0.1.0"})
 
 
 # ── Static frontend serving (production mode) ─────────────────────────
