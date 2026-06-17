@@ -1,12 +1,14 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
-const http = require('http')
+const net = require('net')
 
 // ── Configuration ──────────────────────────────────────────────────────
 const DEV = process.env.NODE_ENV === 'development' || process.argv.includes('--dev')
 const PORT = 8000
 const VITE_DEV_PORTS = [5174, 5175, 5176, 5177, 5178]
+// Try IPv4 first, fall back to IPv6 — Windows can behave differently per host.
+const CHECK_HOSTS = ['127.0.0.1', '::1']
 const IS_WINDOWS = process.platform === 'win32'
 
 const REPO_ROOT = path.resolve(__dirname, '..')
@@ -54,54 +56,58 @@ function killAllChildren() {
   }
 }
 
-// ── Backend health check ───────────────────────────────────────────────
-// NOTE: Use 127.0.0.1, NOT localhost. On Windows 10/11, ``localhost``
-// resolves to ``::1`` (IPv6) while uvicorn binds to ``127.0.0.1`` (IPv4).
-function waitForBackend(retries = 60, interval = 500) {
+// ── TCP port check (more reliable than http.get on Windows) ────────────
+function checkPort(host, port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket()
+    socket.setTimeout(2000)
+    socket.on('connect', () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.on('error', () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.on('timeout', () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.connect(port, host)
+  })
+}
+
+function waitForPort(hosts, port, retries = 30, interval = 500) {
   return new Promise((resolve, reject) => {
-    const check = (attempt) => {
-      const req = http.get(`http://127.0.0.1:${PORT}/api/health`, (res) => {
-        // Any response (even 404) means the server is up
-        resolve()
-      })
-      req.on('error', () => {
-        if (attempt >= retries) {
-          reject(new Error(`Backend not ready after ${retries} retries (${Math.round(retries * interval / 1000)}s)`))
-        } else {
-          setTimeout(() => check(attempt + 1), interval)
+    const check = async (attempt) => {
+      for (const host of hosts) {
+        if (await checkPort(host, port)) {
+          resolve(host)
+          return
         }
-      })
-      req.end()
+      }
+      if (attempt >= retries) {
+        reject(new Error(`Port ${port} not open after ${retries} retries (${Math.round(retries * interval / 1000)}s)`))
+      } else {
+        setTimeout(() => check(attempt + 1), interval)
+      }
     }
     check(0)
   })
 }
 
 // ── Find active Vite dev port ─────────────────────────────────────────
-// Use 127.0.0.1 for consistency with the backend health check.
-function findVitePort() {
-  return new Promise((resolve) => {
-    let idx = 0
-    const tryNext = () => {
-      if (idx >= VITE_DEV_PORTS.length) {
-        console.warn('[electron] No Vite dev server found, trying default port')
-        resolve(VITE_DEV_PORTS[0])
-        return
+async function findVitePort() {
+  for (const port of VITE_DEV_PORTS) {
+    for (const host of CHECK_HOSTS) {
+      if (await checkPort(host, port)) {
+        console.log(`[electron] Found Vite dev server on ${host}:${port}`)
+        return port
       }
-      const p = VITE_DEV_PORTS[idx]
-      const req = http.get(`http://127.0.0.1:${p}`, (res) => {
-        res.resume()
-        console.log(`[electron] Found Vite dev server on port ${p}`)
-        resolve(p)
-      })
-      req.on('error', () => {
-        idx++
-        tryNext()
-      })
-      req.end()
     }
-    tryNext()
-  })
+  }
+  console.warn('[electron] No Vite dev server found, trying default port')
+  return VITE_DEV_PORTS[0]
 }
 
 // ── Window ─────────────────────────────────────────────────────────────
@@ -133,10 +139,8 @@ function createWindow() {
 
   // Dev or production URL
   if (DEV) {
-    // Vite port is set before createWindow() is called
     const vitePort = global.__vitePort || VITE_DEV_PORTS[0]
     mainWindow.loadURL(`http://localhost:${vitePort}`)
-    // DevTools: press F12 to open, not auto-open
   } else {
     mainWindow.loadURL(`http://localhost:${PORT}`)
   }
@@ -170,8 +174,6 @@ function createTray() {
     nativeIcon = nativeImage.createEmpty()
   }
 
-  // macOS: resize to 16x16 for menu bar. Windows loads the 32x32 tray icon
-  // directly — it's already at a size close to the tray display area.
   if (process.platform === 'darwin') {
     nativeIcon = nativeIcon.resize({ width: 16, height: 16 })
   }
@@ -225,24 +227,22 @@ ipcMain.on('show-notification', (_event, { title, body }) => {
   }
 })
 
-	// ── App lifecycle ──────────────────────────────────────────────────────
+// ── App lifecycle ──────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   // 1. Start backend
   spawnBackend()
 
-  // 2. Wait for backend to be ready
+  // 2. Wait for backend to be ready (TCP port check, no HTTP dependency)
   try {
-    await waitForBackend()
-    console.log('[electron] Backend is ready')
+    const host = await waitForPort(CHECK_HOSTS, PORT, 60, 500)
+    console.log(`[electron] Backend is ready on ${host}:${PORT}`)
   } catch (err) {
     console.error('[electron] Backend failed to start:', err.message)
-    // Continue anyway — the window will show an error message
   }
 
   // 3. Detect Vite dev port (dev mode only)
   if (DEV) {
-    const vitePort = await findVitePort()
-    global.__vitePort = vitePort
+    global.__vitePort = await findVitePort()
   }
 
   // 4. Create window and tray
@@ -252,7 +252,6 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   // On Windows, we keep the app running in the tray
-  // Only quit if explicitly told to
 })
 
 app.on('before-quit', () => {
@@ -261,7 +260,6 @@ app.on('before-quit', () => {
 })
 
 app.on('activate', () => {
-  // macOS: re-create window when dock icon is clicked
   if (mainWindow === null) {
     createWindow()
   } else {
