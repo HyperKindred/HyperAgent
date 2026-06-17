@@ -18,7 +18,7 @@ const children = []
 
 function spawnBackend() {
   const cmd = IS_WINDOWS ? 'uv' : 'uv'
-  const args = ['run', 'uvicorn', 'app.main:app', '--port', String(PORT), '--reload']
+  const args = ['run', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', String(PORT), '--reload']
 
   const proc = spawn(cmd, args, {
     cwd: BACKEND_DIR,
@@ -55,10 +55,12 @@ function killAllChildren() {
 }
 
 // ── Backend health check ───────────────────────────────────────────────
+// NOTE: Use 127.0.0.1, NOT localhost. On Windows 10/11, ``localhost``
+// resolves to ``::1`` (IPv6) while uvicorn binds to ``127.0.0.1`` (IPv4).
 function waitForBackend(retries = 60, interval = 500) {
   return new Promise((resolve, reject) => {
     const check = (attempt) => {
-      const req = http.get(`http://localhost:${PORT}/api/health`, (res) => {
+      const req = http.get(`http://127.0.0.1:${PORT}/api/health`, (res) => {
         // Any response (even 404) means the server is up
         resolve()
       })
@@ -76,6 +78,7 @@ function waitForBackend(retries = 60, interval = 500) {
 }
 
 // ── Find active Vite dev port ─────────────────────────────────────────
+// Use 127.0.0.1 for consistency with the backend health check.
 function findVitePort() {
   return new Promise((resolve) => {
     let idx = 0
@@ -86,7 +89,7 @@ function findVitePort() {
         return
       }
       const p = VITE_DEV_PORTS[idx]
-      const req = http.get(`http://localhost:${p}`, (res) => {
+      const req = http.get(`http://127.0.0.1:${p}`, (res) => {
         res.resume()
         console.log(`[electron] Found Vite dev server on port ${p}`)
         resolve(p)
