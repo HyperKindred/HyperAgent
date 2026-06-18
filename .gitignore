@@ -22,6 +22,7 @@ data/
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # Frontend
 frontend/node_modules/
