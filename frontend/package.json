@@ -1,16 +1,47 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.2.0",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k \"vite\" \"electron ../electron/main.js --dev\"",
-    "electron:dev:wait": "concurrently -k \"vite\" \"wait-on http://localhost:5174 && electron ../electron/main.js --dev\"",
-    "electron:build": "vue-tsc -b && vite build && electron ../electron/main.js",
-    "electron:start": "electron ../electron/main.js"
+    "electron:dev": "concurrently -k \"vite\" \"electron ../electron/main.cjs --dev\"",
+    "electron:dev:wait": "concurrently -k \"vite\" \"wait-on http://localhost:5174 && electron ../electron/main.cjs --dev\"",
+    "electron:start": "electron ../electron/main.cjs",
+    "dist": "npm run build && cd .. && uv run pyinstaller --onefile --name hyperagent-backend --distpath frontend/backend-resources --noconfirm --hidden-import=uvicorn.logging --hidden-import=uvicorn.loops.auto --hidden-import=uvicorn.protocols.http.auto backend_launcher.py && cd frontend && node -e \"require('fs').cpSync('../electron', 'electron', {recursive: true})\" && electron-builder --win --x64 --dir",
+    "dist:dir": "npm run build && cd .. && uv run pyinstaller --onefile --name hyperagent-backend --distpath frontend/backend-resources --noconfirm --hidden-import=uvicorn.logging --hidden-import=uvicorn.loops.auto --hidden-import=uvicorn.protocols.http.auto backend_launcher.py && cd frontend && node -e \"require('fs').cpSync('../electron', 'electron', {recursive: true})\" && electron-builder --win --x64 --dir"
+  },
+  "build": {
+    "appId": "com.hyperagent.app",
+    "productName": "HyperAgent",
+    "copyright": "Copyright © 2026 HyperKindred",
+    "directories": {
+      "output": "../electron-dist"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend-resources/hyperagent-backend.exe",
+        "to": "backend/hyperagent-backend.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "../electron/icon.ico",
+      "artifactName": "HyperAgent-${version}-portable.${ext}"
+    }
   },
   "dependencies": {
     "@lucide/vue": "^1.18.0",
@@ -25,6 +56,7 @@
     "@vue/tsconfig": "^0.9.1",
     "concurrently": "^9.1.2",
     "electron": "^35.0.0",
+    "electron-builder": "^26.15.3",
     "typescript": "~6.0.2",
     "vite": "^8.0.12",
     "vue-tsc": "^3.2.8",

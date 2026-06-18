@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain } = r
 const { spawn } = require('child_process')
 const path = require('path')
 const net = require('net')
+const fs = require('fs')
 
 // ── Filter known-harmless libpng warnings from Electron's internal PNGs ─
 const origWrite = process.stderr.write.bind(process.stderr)
@@ -14,29 +15,58 @@ process.stderr.write = (chunk, encoding, callback) => {
   return origWrite(chunk, encoding, callback)
 }
 
-// ── Configuration ──────────────────────────────────────────────────────
+// ── Detect environment ──────────────────────────────────────────────
 const DEV = process.env.NODE_ENV === 'development' || process.argv.includes('--dev')
-const PORT = 8000
+const PACKAGED = app.isPackaged  // true when built by electron-builder
+const PORT = parseInt(process.env.HYPERAGENT_PORT, 10) || 18080
 const VITE_DEV_PORTS = [5174, 5175, 5176, 5177, 5178]
-// Try IPv4 first, fall back to IPv6 — Windows can behave differently per host.
 const CHECK_HOSTS = ['127.0.0.1', '::1']
 const IS_WINDOWS = process.platform === 'win32'
 
 const REPO_ROOT = path.resolve(__dirname, '..')
-const BACKEND_DIR = REPO_ROOT
 
-// ── Child processes ────────────────────────────────────────────────────
+// ── Child processes ─────────────────────────────────────────────────
 /** @type {import('child_process').ChildProcess[]} */
 const children = []
 
+function findBackendExe() {
+  if (PACKAGED) {
+    // electron-builder puts extraResources into process.resourcesPath
+    return path.join(process.resourcesPath, 'backend', 'hyperagent-backend.exe')
+  }
+  // Development: look in the project's dist/ folder
+  const local = path.join(REPO_ROOT, 'dist', 'hyperagent-backend.exe')
+  if (fs.existsSync(local)) return local
+  return null
+}
+
 function spawnBackend() {
-  const cmd = IS_WINDOWS ? 'uv' : 'uv'
-  const args = ['run', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', String(PORT), '--reload']
+  let cmd, args, cwd
+
+  const backendExe = findBackendExe()
+  if (PACKAGED && backendExe && fs.existsSync(backendExe)) {
+    // ── Production mode: bundled backend executable ──
+    console.log(`[electron] Starting bundled backend: ${backendExe}`)
+    cmd = backendExe
+    args = []
+    cwd = path.dirname(backendExe)
+  } else {
+    // ── Development mode: uv run uvicorn ──
+    cmd = 'uv'
+    args = ['run', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', String(PORT)]
+    cwd = REPO_ROOT
+    console.log(`[electron] Starting backend via: ${cmd} ${args.join(' ')}`)
+  }
 
   const proc = spawn(cmd, args, {
-    cwd: BACKEND_DIR,
+    cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
-    shell: IS_WINDOWS,
+    shell: IS_WINDOWS && !PACKAGED,
+    env: {
+      ...process.env,
+      HYPERAGENT_PORT: String(PORT),
+      HYPERAGENT_HOST: '127.0.0.1',
+    },
   })
 
   proc.stdout.on('data', (data) => {
@@ -72,18 +102,9 @@ function checkPort(host, port) {
   return new Promise((resolve) => {
     const socket = new net.Socket()
     socket.setTimeout(2000)
-    socket.on('connect', () => {
-      socket.destroy()
-      resolve(true)
-    })
-    socket.on('error', () => {
-      socket.destroy()
-      resolve(false)
-    })
-    socket.on('timeout', () => {
-      socket.destroy()
-      resolve(false)
-    })
+    socket.on('connect', () => { socket.destroy(); resolve(true) })
+    socket.on('error', () => { socket.destroy(); resolve(false) })
+    socket.on('timeout', () => { socket.destroy(); resolve(false) })
     socket.connect(port, host)
   })
 }
@@ -92,10 +113,7 @@ function waitForPort(hosts, port, retries = 30, interval = 500) {
   return new Promise((resolve, reject) => {
     const check = async (attempt) => {
       for (const host of hosts) {
-        if (await checkPort(host, port)) {
-          resolve(host)
-          return
-        }
+        if (await checkPort(host, port)) { resolve(host); return }
       }
       if (attempt >= retries) {
         reject(new Error(`Port ${port} not open after ${retries} retries (${Math.round(retries * interval / 1000)}s)`))
@@ -129,23 +147,20 @@ let tray = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 800,
-    minHeight: 600,
+    width: 1200, height: 800, minWidth: 800, minHeight: 600,
     title: 'HyperAgent',
     icon: (() => {
-      const ico = path.join(REPO_ROOT, 'electron', 'icon.ico')
-      const png = path.join(REPO_ROOT, 'electron', 'icon.png')
-      try { if (require('fs').existsSync(ico)) return ico } catch {}
+      const ico = path.join(__dirname, 'icon.ico')
+      const png = path.join(__dirname, 'icon.png')
+      if (fs.existsSync(ico)) return ico
       return png
     })(),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
-    show: false, // show after ready
+    show: false,
   })
 
   // Dev or production URL
@@ -156,9 +171,7 @@ function createWindow() {
     mainWindow.loadURL(`http://localhost:${PORT}`)
   }
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show()
-  })
+  mainWindow.once('ready-to-show', () => { mainWindow.show() })
 
   // Minimize to tray instead of closing
   mainWindow.on('close', (event) => {
@@ -168,15 +181,12 @@ function createWindow() {
     }
   })
 
-  mainWindow.on('closed', () => {
-    mainWindow = null
-  })
+  mainWindow.on('closed', () => { mainWindow = null })
 }
 
 // ── Tray ───────────────────────────────────────────────────────────────
 function createTray() {
-  const iconPath = path.join(REPO_ROOT, 'electron', 'tray-icon.png')
-  const fs = require('fs')
+  const iconPath = path.join(__dirname, 'tray-icon.png')
   let nativeIcon
 
   if (fs.existsSync(iconPath)) {
@@ -195,10 +205,7 @@ function createTray() {
     {
       label: '显示 HyperAgent',
       click: () => {
-        if (mainWindow) {
-          mainWindow.show()
-          mainWindow.focus()
-        }
+        if (mainWindow) { mainWindow.show(); mainWindow.focus() }
       },
     },
     { type: 'separator' },
@@ -217,10 +224,7 @@ function createTray() {
   tray.setContextMenu(contextMenu)
 
   tray.on('double-click', () => {
-    if (mainWindow) {
-      mainWindow.show()
-      mainWindow.focus()
-    }
+    if (mainWindow) { mainWindow.show(); mainWindow.focus() }
   })
 }
 
@@ -230,10 +234,7 @@ ipcMain.on('show-notification', (_event, { title, body }) => {
     const notif = new Notification({ title, body })
     notif.show()
     notif.on('click', () => {
-      if (mainWindow) {
-        mainWindow.show()
-        mainWindow.focus()
-      }
+      if (mainWindow) { mainWindow.show(); mainWindow.focus() }
     })
   }
 })
