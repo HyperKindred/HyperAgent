@@ -26,6 +26,10 @@ echo === (3/5) Build backend exe ===
 uv run pyinstaller --onefile --name hyperagent-backend --distpath frontend/backend-resources --noconfirm --hidden-import=uvicorn.logging --hidden-import=uvicorn.loops.auto --hidden-import=uvicorn.protocols.http.auto backend_launcher.py
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+rem ---- (3.5/5) Copy frontend dist alongside backend exe --------------
+echo === (3.5/5) Copy frontend dist ===
+xcopy /E /I /Y frontend\dist frontend\backend-resources\dist
+
 rem ---- (4/5) Package Electron portable -------------------------------
 echo === (4/5) Package Electron portable ===
 cd frontend

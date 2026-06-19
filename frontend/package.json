@@ -28,8 +28,9 @@
     ],
     "extraResources": [
       {
-        "from": "backend-resources/hyperagent-backend.exe",
-        "to": "backend/hyperagent-backend.exe"
+        "from": "backend-resources",
+        "to": "backend",
+        "filter": ["**/*"]
       }
     ],
     "win": {
