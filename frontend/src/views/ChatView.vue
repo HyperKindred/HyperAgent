@@ -156,6 +156,15 @@ async function handleSend() {
       const newId = await createThread()
       chatStore.threadId = newId
       localStorage.setItem('hyperagent-thread', newId)
+      // Immediately add the new thread to the sidebar list so it's visible
+      // even before the first stream response completes.
+      chatStore.threads.unshift({
+        id: newId,
+        title: '新对话',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+      })
     } catch {
       chatStore.threadId = `hyperagent-${Date.now().toString(36)}`
     }
