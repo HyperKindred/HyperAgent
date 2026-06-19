@@ -144,6 +144,18 @@ function getFileIcon(name: string): any {
   }
 }
 
+/** Ensure a thread appears in the sidebar, deduping by id. */
+function _ensureThreadInList(id: string, title: string) {
+  if (chatStore.threads.some(t => t.id === id)) return
+  chatStore.threads.unshift({
+    id,
+    title,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    message_count: 0,
+  })
+}
+
 async function handleSend() {
   const text = input.value.trim()
   const hasImages = pendingImages.value.length > 0
@@ -156,18 +168,15 @@ async function handleSend() {
       const newId = await createThread()
       chatStore.threadId = newId
       localStorage.setItem('hyperagent-thread', newId)
-      // Immediately add the new thread to the sidebar list so it's visible
-      // even before the first stream response completes.
-      chatStore.threads.unshift({
-        id: newId,
-        title: '新对话',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        message_count: 0,
-      })
+      // Add to sidebar immediately (before stream response)
+      _ensureThreadInList(newId, '新对话')
     } catch {
+      // API failed — use a local-only thread ID so the conversation still works
       chatStore.threadId = `hyperagent-${Date.now().toString(36)}`
+      localStorage.setItem('hyperagent-thread', chatStore.threadId)
     }
+    // Refresh sidebar from API as a safety net
+    await loadThreadList()
   }
 
   const imagesToSend = hasImages ? [...pendingImages.value] : undefined
