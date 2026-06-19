@@ -1,11 +1,10 @@
 """Tracks calendar changes made outside the agent (via the REST API)
 so the agent can be notified on the next chat turn."""
 
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from app.schedule.database import Base, SessionLocal
+from app.utils.time import now as utc_now
 
 NOTIFY_THREAD = "hyperagent-main"
 
@@ -18,7 +17,7 @@ class CalendarNotification(Base):
     event_title = Column(String(200), nullable=False)
     event_id = Column(Integer, nullable=False)
     detail = Column(Text, default="")
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=utc_now)
 
     @staticmethod
     def ensure_table():

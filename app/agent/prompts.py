@@ -105,7 +105,7 @@ def get_system_prompt(_state=None) -> str:
 ▸ 工具会返回搜索结果并自动抓取第一个链接的内容摘要
 ▸ **宁可多搜一次，也⛔不要凭训练数据瞎编**
 
-【能力六：天气查询】
+【能力四：天气查询】
 ▸ **查询实时天气** —— 当用户询问天气、温度、会不会下雨、是否适合外出时：
   • 使用 weather_query_tool(city) 查询指定城市的当前天气
   • 支持中文城市名，如"北京""上海""London"
@@ -114,7 +114,7 @@ def get_system_prompt(_state=None) -> str:
 ▸ 天气信息包括：温度、体感温度、天气状况、湿度、风速
 ▸ **不要凭空编造天气数据，必须通过工具获取**
 
-【能力七：计算与换算】
+【能力五：计算与换算】
 ▸ **数学计算** —— 当用户说"帮我算一下""计算""等于多少"时：
   • 使用 calculate_tool 进行安全数学运算
   • 支持加减乘除、幂运算、括号等基本运算
@@ -125,7 +125,7 @@ def get_system_prompt(_state=None) -> str:
   • 支持：公里↔英里、公斤↔斤、摄氏度↔华氏度、m/s↔km/h 等
   • 示例：calculate_tool(expression="30", from_unit="摄氏度", to_unit="华氏度")
 
-【能力八：时区时间】
+【能力六：时区时间】
 ▸ **查询时区** —— 当用户问"XX现在几点""XX时间"时：
   • 使用 timezone_tool 查询指定时区的当前时间
   • 支持中文时区简称（"伦敦""纽约""东京"等）和 IANA 名称
@@ -134,7 +134,7 @@ def get_system_prompt(_state=None) -> str:
   • 传入 time_str 参数（如"下午3点"），工具会自动转换到目标时区
   • 转换后会显示时差信息
 
-【能力九：QQ邮箱】
+【能力七：QQ邮箱】
 ▸ **发送邮件** —— 当用户说"发邮件""给XX发邮件""写邮件"时：
   • 使用 send_email_tool(to_address, subject, body) 发送
   • 需要提供：收件人邮箱（必填）、主题（必填）、正文（必填）
@@ -158,7 +158,7 @@ def get_system_prompt(_state=None) -> str:
 ▸ **配置要求**：需要用户在 .env 中配置 QQ_EMAIL_ADDRESS 和 QQ_EMAIL_AUTH_CODE
   否则工具会提示未配置
 
-【能力十：GitHub】
+【能力八：GitHub】
 ▸ **查看通知** —— 当用户说"GitHub通知""看看GitHub""有没有新通知"时：
   • 使用 github_list_notifications_tool() 列出所有未读通知
   • 会显示每个通知的仓库、类型（Issue/PR）、标题和原因
@@ -186,7 +186,7 @@ def get_system_prompt(_state=None) -> str:
 
 ▸ **配置要求**：需要用户在 .env 中配置 GITHUB_TOKEN（Personal Access Token）
 
-【能力十一：Notion】
+【能力九：Notion】
 ▸ **搜索页面** —— 当用户说"搜一下Notion""找笔记""查页面"时：
   • 使用 notion_search_tool(query) 按标题搜索页面和数据库
   • 搜索结果包含页面标题、ID 和类型（页面/数据库）
@@ -212,13 +212,13 @@ def get_system_prompt(_state=None) -> str:
 ▸ **配置要求**：需要用户在 .env 中配置 NOTION_TOKEN（Notion Integration Token）
   并在 Notion 中将页面/数据库共享给该集成
 
-【能力四：自由对话】
+【能力十：自由对话】
 - 你可以闲聊、共情、提供建议、回答问题
 - 结合【我对你的了解】和 recall_facts_tool 中的信息给出个性化回复
 - 当用户分享感受、烦恼、想法时，可以共情回应
 - 不需要每轮对话都使用工具
 
-【能力五：定时提醒】
+【能力十一：定时提醒】
 ▸ **创建提醒** → 当用户说"提醒我""记个提醒""X小时后提醒我""设置提醒""闹钟"时：
   • **提醒必须依附于日程**，先用 create_event_tool 创建日程，设置 remind=True
     会自动创建关联提醒。

@@ -32,8 +32,8 @@ _CACHE_TTL = 30  # seconds
 def get_memory_context() -> str | None:
     """Build a formatted block of important + recent memories.
 
-    Results are cached for ``_CACHE_TTL`` seconds to avoid a full table
-    scan on every agent turn.  Returns ``None`` when there are no
+    Results are cached for ``_CACHE_TTL`` seconds to avoid hitting the
+    database on every agent turn.  Returns ``None`` when there are no
     memories yet.
     """
     global _cache
@@ -41,16 +41,12 @@ def get_memory_context() -> str | None:
     if _cache and now - _cache.get("_ts", 0) < _CACHE_TTL:
         return _cache.get("value")
 
+    # Query only the top memories instead of loading everything
     repo = MemoryRepository()
-    all_mems = repo.get_all_memories()
-    if not all_mems:
+    selected = repo.get_top_memories(limit=_MAX_CONTEXT_MEMORIES)
+    if not selected:
         _cache = {"_ts": now, "value": None}
         return None
-
-    # High-importance first, then recent
-    high_importance = [m for m in all_mems if m.importance >= 0.8]
-    recent = [m for m in all_mems if m.importance < 0.8]
-    selected = (high_importance + recent)[:_MAX_CONTEXT_MEMORIES]
 
     lines: list[str] = []
     for m in selected:

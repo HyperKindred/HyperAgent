@@ -1,9 +1,10 @@
 from datetime import datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from app.schedule.database import Base
+from app.utils.time import utc_now_sql
 
 
 # ── SQLAlchemy ORM Model ──────────────────────────────────────────────
@@ -19,11 +20,11 @@ class Event(Base):
     status = Column(String(20), default="pending")  # pending | completed | cancelled
     priority = Column(String(20), default="normal")  # low | normal | high
     category = Column(String(50), default="")
-    created_at = Column(DateTime, server_default=func.datetime("now", "localtime"))
+    created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(
         DateTime,
-        server_default=func.datetime("now", "localtime"),
-        onupdate=func.datetime("now", "localtime"),
+        server_default=utc_now_sql(),
+        onupdate=utc_now_sql(),
     )
 
 

@@ -76,6 +76,10 @@ class MemoryRepository:
 
         Falls back to text-based LIKE search if the embedding API is
         unavailable.
+
+        Note: currently performs brute-force cosine similarity over up to
+        ``_MAX_SEARCH_CANDIDATES`` memories that have embeddings.  A dedicated
+        vector index (e.g. sqlite-vec) would eliminate the full scan.
         """
         all_mems = self._all_with_embeddings(category=category)
         if not all_mems:
@@ -99,6 +103,8 @@ class MemoryRepository:
 
     # ── text fallback ───────────────────────────────────────────────
 
+    _MAX_TEXT_FALLBACK = 20
+
     def search_memories(
         self, query: str, category: str | None = None
     ) -> list[Memory]:
@@ -113,7 +119,11 @@ class MemoryRepository:
             q = db.query(Memory).filter(Memory.content.ilike(pattern))
             if category:
                 q = q.filter(Memory.category == category)
-            return q.order_by(Memory.updated_at.desc()).all()
+            return (
+                q.order_by(Memory.updated_at.desc())
+                .limit(self._MAX_TEXT_FALLBACK)
+                .all()
+            )
 
     # ── list / get ──────────────────────────────────────────────────
 
@@ -132,6 +142,21 @@ class MemoryRepository:
         with self._session() as db:
             return db.query(Memory).order_by(Memory.created_at.desc()).all()
 
+    def get_top_memories(self, limit: int = 5) -> list[Memory]:
+        """Most relevant memories for system-prompt injection.
+
+        Returns the top *limit* memories, prioritizing high-importance
+        entries first, then most recent.  This avoids loading the entire
+        table just to pick a handful of rows.
+        """
+        with self._session() as db:
+            return (
+                db.query(Memory)
+                .order_by(Memory.importance.desc(), Memory.updated_at.desc())
+                .limit(limit)
+                .all()
+            )
+
     def get_memory(self, memory_id: int) -> Memory | None:
         """Fetch a single memory by id."""
         with self._session() as db:
@@ -139,15 +164,26 @@ class MemoryRepository:
 
     # ── internals ───────────────────────────────────────────────────
 
+    # Max candidates for brute-force cosine similarity scan.
+    # A dedicated vector index (Phase 3.1) will eliminate this limit.
+    _MAX_SEARCH_CANDIDATES = 200
+
     def _all_with_embeddings(
         self, category: str | None = None
     ) -> list[Memory]:
-        """All memories that have a non-null embedding."""
+        """Up to ``_MAX_SEARCH_CANDIDATES`` memories that have a non-null embedding.
+
+        Biases toward recent memories (most likely to be relevant).
+        """
         with self._session() as db:
             q = db.query(Memory).filter(Memory.embedding.isnot(None))
             if category:
                 q = q.filter(Memory.category == category)
-            return q.all()
+            return (
+                q.order_by(Memory.updated_at.desc())
+                .limit(self._MAX_SEARCH_CANDIDATES)
+                .all()
+            )
 
     # ── delete ──────────────────────────────────────────────────────
 

@@ -29,6 +29,12 @@ const reminders = ref<ReminderItem[]>([])
 const loading = ref(false)
 const showAddForm = ref(false)
 const delConfirmId = ref<number | null>(null)
+const errorMessage = ref('')  // user-facing error message
+
+// Auto-clear error after 5 seconds
+watch(errorMessage, (msg) => {
+  if (msg) setTimeout(() => { errorMessage.value = '' }, 5000)
+})
 
 // Add form
 const newTitle = ref('')
@@ -54,6 +60,7 @@ const dayEvents = computed(() =>
 // ── Data loading ──
 async function loadMonth() {
   loading.value = true
+  errorMessage.value = ''
   try {
     const [evts, rems] = await Promise.all([
       fetchEventsByMonth(currentMonth.value),
@@ -61,7 +68,8 @@ async function loadMonth() {
     ])
     events.value = evts
     reminders.value = rems
-  } catch {
+  } catch (e: any) {
+    errorMessage.value = '加载日程失败：' + (e.message || '网络错误')
     events.value = []
     reminders.value = []
   } finally {
@@ -99,7 +107,10 @@ async function handleDelete(id: number) {
     events.value = events.value.filter(e => e.id !== id)
     delConfirmId.value = null
     notifyCalendarChange()
-  } catch {}
+  } catch (e: any) {
+    errorMessage.value = '删除失败：' + (e.message || '网络错误')
+    delConfirmId.value = null
+  }
 }
 
 async function handleAdd() {
@@ -108,6 +119,7 @@ async function handleAdd() {
     return
   }
   addError.value = ''
+  errorMessage.value = ''
   const startTime = `${selectedDate.value}T${newTime.value}:00`
   const endTime = newEndTime.value ? `${selectedDate.value}T${newEndTime.value}:00` : undefined
   try {
@@ -126,7 +138,9 @@ async function handleAdd() {
     newPriority.value = 'normal'
     await loadMonth()
     notifyCalendarChange()
-  } catch {}
+  } catch (e: any) {
+    errorMessage.value = '创建日程失败：' + (e.message || '网络错误')
+  }
 }
 
 const priorityLabel = (p: string) =>
@@ -166,6 +180,9 @@ const statusLabel = (s: string) =>
       <div v-if="addError" class="form-error">{{ addError }}</div>
       <button class="btn-primary" @click="handleAdd">确认</button>
     </div>
+
+    <!-- Error message -->
+    <div v-if="errorMessage" class="error-banner">{{ errorMessage }}</div>
 
     <!-- Events -->
     <div v-if="dayEvents.length > 0" class="events-list">
@@ -292,6 +309,18 @@ const statusLabel = (s: string) =>
   cursor: pointer;
 }
 .btn-primary:hover { background: #4f46e5; }
+
+/* Error banner */
+.error-banner {
+  margin: 8px 0 12px;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #dc2626;
+  font-size: 13px;
+  max-width: 480px;
+}
 
 /* Events */
 .events-list {

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 
 from app.schedule.database import Base
+from app.utils.time import now as utc_now
 
 
 # ── ORM Models ──────────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ class Reminder(Base):
     trigger_at = Column(DateTime, nullable=False, index=True)
     recurring = Column(String(100), nullable=True)  # cron expression, e.g. "0 9 * * 1-5"
     status = Column(String(20), nullable=False, default="pending")  # pending | fired | cancelled
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
     fired_at = Column(DateTime, nullable=True)
     event_id = Column(Integer, nullable=True, index=True)  # linked schedule event, if any
 
@@ -35,7 +36,7 @@ class PendingNotification(Base):
     event_type = Column(String(50), nullable=False, default="reminder")  # reminder | suggestion | third_party
     title = Column(String(255), nullable=False)
     body = Column(Text, default="")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utc_now)
     delivered = Column(Boolean, nullable=False, default=False)
 
 

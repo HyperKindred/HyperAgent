@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.reminder.models import PendingNotification, Reminder, ReminderCreate
 from app.schedule.database import SessionLocal
+from app.utils.time import now as utc_now
 
 
 # ── Reminder CRUD ───────────────────────────────────────────────────────
@@ -45,6 +46,9 @@ class ReminderRepository:
             db.commit()
             db.refresh(reminder)
             return reminder
+        except Exception:
+            db.rollback()
+            raise
         finally:
             if self._db is None:
                 db.close()
@@ -102,15 +106,25 @@ class ReminderRepository:
     # ── Update ──────────────────────────────────────────────────────
 
     def mark_fired(self, reminder_id: int) -> Optional[Reminder]:
+        """Atomically mark a reminder as fired (status='fired').
+
+        Returns the updated Reminder, or None if it was already fired/cancelled.
+        """
         db = self._session()
         try:
-            reminder = db.query(Reminder).filter(Reminder.id == reminder_id).first()
+            reminder = db.query(Reminder).filter(
+                Reminder.id == reminder_id,
+                Reminder.status == "pending",
+            ).first()
             if reminder:
                 reminder.status = "fired"
-                reminder.fired_at = datetime.utcnow()
+                reminder.fired_at = utc_now()
                 db.commit()
                 db.refresh(reminder)
             return reminder
+        except Exception:
+            db.rollback()
+            raise
         finally:
             if self._db is None:
                 db.close()
@@ -118,12 +132,18 @@ class ReminderRepository:
     def cancel(self, reminder_id: int) -> bool:
         db = self._session()
         try:
-            reminder = db.query(Reminder).filter(Reminder.id == reminder_id).first()
+            reminder = db.query(Reminder).filter(
+                Reminder.id == reminder_id,
+                Reminder.status == "pending",
+            ).first()
             if reminder:
                 reminder.status = "cancelled"
                 db.commit()
                 return True
             return False
+        except Exception:
+            db.rollback()
+            raise
         finally:
             if self._db is None:
                 db.close()
@@ -144,6 +164,9 @@ class ReminderRepository:
                 db.commit()
                 return True
             return False
+        except Exception:
+            db.rollback()
+            raise
         finally:
             if self._db is None:
                 db.close()
@@ -176,6 +199,9 @@ class NotificationRepository:
             db.commit()
             db.refresh(note)
             return note
+        except Exception:
+            db.rollback()
+            raise
         finally:
             if self._db is None:
                 db.close()
@@ -197,10 +223,16 @@ class NotificationRepository:
     def mark_delivered(self, note_id: int) -> None:
         db = self._session()
         try:
-            note = db.query(PendingNotification).filter(PendingNotification.id == note_id).first()
+            note = db.query(PendingNotification).filter(
+                PendingNotification.id == note_id,
+                PendingNotification.delivered == False,
+            ).first()
             if note:
                 note.delivered = True
                 db.commit()
+        except Exception:
+            db.rollback()
+            raise
         finally:
             if self._db is None:
                 db.close()

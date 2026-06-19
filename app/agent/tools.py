@@ -1,5 +1,6 @@
 """LangChain tool definitions for schedule CRUD."""
 
+import logging
 from datetime import datetime, timedelta
 
 import re
@@ -16,6 +17,8 @@ from app.schedule.repository import ScheduleRepository
 from app.web_search.searcher import search_web
 from app.weather.client import get_weather
 from app.calculator.calc import calculate
+
+logger = logging.getLogger(__name__)
 
 repo = ScheduleRepository()
 memory_repo = MemoryRepository()
@@ -265,8 +268,8 @@ def update_event_tool(event_id: int, **kwargs) -> str:
                     event_id=event.id,
                 ))
                 schedule_reminder_job(new_reminder)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to sync reminder for event %s: %s", event_id, exc)
 
     return f"✅ 已更新日程：**{event.title}** (ID: {event.id})"
 
@@ -296,9 +299,8 @@ def delete_event_tool(event_id: int) -> str:
             if linked:
                 cancel_reminder_job(linked.id)
                 rrepo.delete(linked.id)
-                return f"🗑️ 已删除日程及关联提醒 (ID: {event_id})"
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to delete linked reminder for event %s: %s", event_id, exc)
         return f"🗑️ 已删除日程 (ID: {event_id})"
     return f"❌ 未找到 ID 为 {event_id} 的日程事件。"
 
@@ -569,7 +571,10 @@ def timezone_tool(target_timezone: str, time_str: str = "") -> str:
         if parsed is None:
             return f"❌ 无法解析时间：{time_str}"
         # Interpret the parsed naive time as local time
-        local_dt = tz.localize(parsed)
+        if parsed.tzinfo is not None:
+            local_dt = parsed.astimezone(tz)
+        else:
+            local_dt = tz.localize(parsed)
         target_dt = local_dt.astimezone(target_tz)
         offset_hours = (target_dt.utcoffset().total_seconds() - local_dt.utcoffset().total_seconds()) // 3600
         diff_str = f"（{'早' if offset_hours < 0 else '晚'}{abs(int(offset_hours))} 小时）"

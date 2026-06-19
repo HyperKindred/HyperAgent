@@ -55,10 +55,18 @@ export const chatStore = reactive<ChatStore>({
   threads: [],
 })
 
-// Auto-save messages on every change
+// Auto-save messages on every change (debounced to avoid spamming
+// localStorage on every streaming token).
+let _saveTimer: ReturnType<typeof setTimeout> | null = null
 watch(
   () => chatStore.messages,
-  () => saveMessagesForThread(chatStore.threadId, chatStore.messages),
+  () => {
+    if (_saveTimer) clearTimeout(_saveTimer)
+    _saveTimer = setTimeout(() => {
+      saveMessagesForThread(chatStore.threadId, chatStore.messages)
+      _saveTimer = null
+    }, 500)
+  },
   { deep: true },
 )
 
@@ -144,6 +152,7 @@ export async function switchThread(threadId: string) {
 }
 
 export async function clearChat() {
+  const oldId = chatStore.threadId  // save before overwriting
   try {
     const newId = await createThread()
     chatStore.threadId = newId
@@ -154,7 +163,7 @@ export async function clearChat() {
   chatStore.messages.splice(0)
   removeMessagesForThread(chatStore.threadId)
   // Clear localStorage for old thread ID to prevent stale message cache
-  removeMessagesForThread(loadThreadId())
+  if (oldId) removeMessagesForThread(oldId)
   _initialized = false
   initWelcomeMessage()
   await loadThreadList()

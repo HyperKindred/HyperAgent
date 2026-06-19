@@ -5,7 +5,9 @@ On startup, reloads all pending reminders from DB and schedules them.
 """
 
 import asyncio
+import json
 import logging
+import threading
 from datetime import datetime
 
 import pytz
@@ -17,6 +19,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import settings
 from app.reminder.models import Reminder
 from app.reminder.repository import ReminderRepository, NotificationRepository
+from app.utils.time import now as utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -25,23 +28,31 @@ tz = pytz.timezone(settings.timezone)
 # Singleton
 scheduler: BackgroundScheduler | None = None
 _event_loop: asyncio.AbstractEventLoop | None = None
+# Thread lock for _sse_clients access from APScheduler background thread
+_sse_lock = threading.Lock()
 
 
 def fire_reminder(reminder_id: int) -> None:
-    """Callback when a reminder's trigger time arrives."""
+    """Callback when a reminder's trigger time arrives.
+
+    Uses an atomic ``UPDATE ... WHERE status='pending'`` check in
+    ``mark_fired()`` to prevent duplicate delivery when both the
+    APScheduler ``DateTrigger`` and the periodic safety-net scan
+    call this function for the same reminder.
+    """
     logger.info("Reminder %s fired", reminder_id)
     reminder_repo = ReminderRepository()
     notif_repo = NotificationRepository()
 
-    reminder = reminder_repo.get_by_id(reminder_id)
-    if reminder is None or reminder.status != "pending":
+    # Atomic: mark_fired now filters by status='pending' and returns
+    # None if the reminder was already fired/cancelled.
+    reminder = reminder_repo.mark_fired(reminder_id)
+    if reminder is None:
+        logger.debug("Reminder %s already fired or cancelled, skipping", reminder_id)
         return
 
     # Enqueue a notification for SSE delivery
     notification = notif_repo.enqueue(reminder)
-
-    # Mark as fired
-    reminder_repo.mark_fired(reminder_id)
 
     # If recurring, schedule the next occurrence
     if reminder.recurring:
@@ -60,8 +71,6 @@ def _push_notification_to_sse(notification) -> None:
     if loop is None or not loop.is_running():
         return
     try:
-        import json
-
         from app.reminder.notifier import _sse_clients
 
         payload = json.dumps({
@@ -72,9 +81,11 @@ def _push_notification_to_sse(notification) -> None:
             "created_at": notification.created_at.isoformat(),
         }, ensure_ascii=False)
 
-        if _sse_clients:
-            for queue in _sse_clients.copy():
-                asyncio.run_coroutine_threadsafe(queue.put(payload), loop)
+        with _sse_lock:
+            clients = list(_sse_clients)
+
+        for queue in clients:
+            asyncio.run_coroutine_threadsafe(queue.put(payload), loop)
     except Exception as e:
         logger.warning("Failed to push notification to SSE: %s", e)
 
@@ -133,13 +144,13 @@ def _scan_and_schedule() -> None:
     """Periodic scan: check DB for pending reminders that should have fired already.
 
     Acts as a safety net in case the DateTrigger missed something.
-    Fires off reminders that are past their trigger_at time.
+    Uses atomic ``mark_fired()`` to avoid duplicate delivery with DateTrigger.
     """
     repo = ReminderRepository()
-    reminders = repo.list_pending()
-    now = datetime.now(tz).replace(tzinfo=None)  # naive local time, matching stored trigger_at
+    pending = repo.list_pending()
+    now = utc_now()  # stored trigger_at is naive UTC
 
-    for r in reminders:
+    for r in pending:
         if r.trigger_at <= now:
             logger.info("Safety net: firing reminder %s (triggered at %s)", r.id, r.trigger_at)
             fire_reminder(r.id)
@@ -174,7 +185,7 @@ def start_scheduler() -> BackgroundScheduler:
     # Load pending reminders from DB and schedule them
     repo = ReminderRepository()
     pending = repo.list_pending()
-    now = datetime.now(tz).replace(tzinfo=None)  # naive local time
+    now = utc_now()  # naive UTC
     for r in pending:
         if r.trigger_at > now:
             schedule_reminder_job(r)

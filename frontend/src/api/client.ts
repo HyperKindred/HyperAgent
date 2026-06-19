@@ -165,6 +165,9 @@ export async function* sendChatStream(
       body: JSON.stringify(payload),
       signal: combinedSignal,
     })
+  } catch (e: any) {
+    clearTimeout(timeoutId)
+    throw new Error(e.name === 'AbortError' ? e : '网络连接失败：请检查后端是否在运行')
   } finally {
     clearTimeout(timeoutId)
   }

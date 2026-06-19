@@ -8,9 +8,10 @@ alongside a DeepSeek embedding vector that enables similarity search.
 from datetime import datetime
 
 from pydantic import BaseModel
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text
 
 from app.schedule.database import Base
+from app.utils.time import utc_now_sql
 
 
 class Memory(Base):
@@ -24,11 +25,11 @@ class Memory(Base):
     embedding = Column(Text, nullable=True)
     importance = Column(Float, default=0.5)
     source = Column(String(50), default="chat")
-    created_at = Column(DateTime, server_default=func.datetime("now", "localtime"))
+    created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(
         DateTime,
-        server_default=func.datetime("now", "localtime"),
-        onupdate=func.datetime("now", "localtime"),
+        server_default=utc_now_sql(),
+        onupdate=utc_now_sql(),
     )
 
 

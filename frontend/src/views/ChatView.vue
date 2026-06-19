@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, computed } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { sendChatStream, createThread } from '../api/client'
 import { chatStore, initWelcomeMessage, loadThreadList } from '../store/chat'
 import { MessageSquare, Send, Square, Paperclip, FileText, Code, File, X, Image as ImageIcon } from '@lucide/vue'
@@ -236,7 +237,10 @@ function renderMarkdown(text: string): string {
   // Escape `---` horizontal rules so they don't create intrusive <hr> lines
   const safe = text.replace(/\n---+\n/g, '\n——\n')
   const html = marked.parse(safe, { breaks: true })
-  return typeof html === 'string' ? html : ''
+  // Sanitize to prevent XSS (agent content is LLM-generated, but the
+  // LLM could be prompted to produce raw HTML/script tags)
+  const raw = typeof html === 'string' ? html : ''
+  return DOMPurify.sanitize(raw)
 }
 
 function autoResize(e: Event) {
