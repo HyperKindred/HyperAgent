@@ -168,15 +168,14 @@ async function handleSend() {
       const newId = await createThread()
       chatStore.threadId = newId
       localStorage.setItem('hyperagent-thread', newId)
-      // Add to sidebar immediately (before stream response)
-      _ensureThreadInList(newId, '新对话')
     } catch {
       // API failed — use a local-only thread ID so the conversation still works
       chatStore.threadId = `hyperagent-${Date.now().toString(36)}`
       localStorage.setItem('hyperagent-thread', chatStore.threadId)
     }
-    // Refresh sidebar from API as a safety net
-    await loadThreadList()
+    // Ensure the thread appears in the sidebar immediately.
+    // The finally block also calls loadThreadList() as a safety net.
+    _ensureThreadInList(chatStore.threadId, '新对话')
   }
 
   const imagesToSend = hasImages ? [...pendingImages.value] : undefined
