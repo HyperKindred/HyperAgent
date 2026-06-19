@@ -103,6 +103,39 @@ async def health_check():
     return JSONResponse({"status": "ok", "version": "0.1.0"})
 
 
+@app.get("/api/health/debug")
+async def health_debug():
+    """Debug endpoint — shows the data paths the backend is using."""
+    import os
+
+    from app.config import settings
+    from app.schedule.database import SessionLocal, engine
+
+    # Count records in the active database
+    try:
+        db = SessionLocal()
+        from app.memory.models import Memory
+        from app.reminder.models import Reminder
+        from app.schedule.models import Event
+
+        memory_count = db.query(Memory).count()
+        event_count = db.query(Event).count()
+        reminder_count = db.query(Reminder).count()
+        db.close()
+    except Exception as e:
+        memory_count = event_count = reminder_count = str(e)
+
+    return JSONResponse({
+        "data_dir": str(settings.data_dir),
+        "db_url": str(engine.url),
+        "HYPERAGENT_DATA_DIR": os.environ.get("HYPERAGENT_DATA_DIR", "(not set)"),
+        "CWD": os.getcwd(),
+        "memory_count": memory_count,
+        "event_count": event_count,
+        "reminder_count": reminder_count,
+    })
+
+
 # ── Static frontend serving (production mode) ─────────────────────────
 _frontend_dist = _find_frontend_dist()
 if _frontend_dist is not None:

@@ -1,11 +1,14 @@
 """Chat REST endpoints."""
 
+import os
+
 from pydantic import BaseModel
 from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.agent.graph import run_agent, stream_agent
 from app.thread.repository import ThreadRepository
+from app.config import settings
 
 router = APIRouter()
 
