@@ -9,7 +9,7 @@ from app.config import settings
 data_dir = Path(settings.data_dir)
 data_dir.mkdir(parents=True, exist_ok=True)
 
-engine = create_engine(settings.database_url, echo=False)
+engine = create_engine(settings.resolved_database_url, echo=False)
 Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
 

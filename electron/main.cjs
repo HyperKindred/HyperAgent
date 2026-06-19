@@ -66,6 +66,9 @@ function spawnBackend() {
       ...process.env,
       HYPERAGENT_PORT: String(PORT),
       HYPERAGENT_HOST: '127.0.0.1',
+      // In packaged mode, store data in the user's app data directory so it
+      // survives version updates.  Dev mode uses the default ./data/ path.
+      ...(PACKAGED ? { HYPERAGENT_DATA_DIR: app.getPath('userData') } : {}),
     },
   })
 

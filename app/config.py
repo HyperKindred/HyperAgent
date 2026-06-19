@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,10 +37,28 @@ class Settings(BaseSettings):
     # When empty, image input falls back to the default LLM model
     vision_model: str = "kimi-k2.6"
 
-    # Storage
-    data_dir: Path = Path("data")
-    database_url: str = "sqlite:///data/hyperagent.db"
-    checkpoint_url: str = "sqlite:///data/checkpoints.db"
+    # Storage — data directory for all SQLite databases.
+    #
+    # In development (``uv run``) this defaults to ``data/`` relative to the
+    # project root.  In the packaged Electron build the launcher sets
+    # ``HYPERAGENT_DATA_DIR`` to ``app.getPath('userData')``
+    # (``%APPDATA%/HyperAgent`` on Windows) so that user data survives
+    # version updates.
+    data_dir: Path = Path(
+        os.environ.get("HYPERAGENT_DATA_DIR", "data")
+    )
+    database_url: str = ""
+    checkpoint_url: str = ""
+
+    @property
+    def resolved_database_url(self) -> str:
+        """Return the database URL, defaulting to ``data_dir / hyperagent.db``."""
+        return self.database_url or f"sqlite:///{self.data_dir / 'hyperagent.db'}"
+
+    @property
+    def resolved_checkpoint_url(self) -> str:
+        """Return the checkpoint URL, defaulting to ``data_dir / checkpoints.db``."""
+        return self.checkpoint_url or f"sqlite:///{self.data_dir / 'checkpoints.db'}"
 
     # Timezone
     timezone: str = "Asia/Shanghai"
