@@ -100,7 +100,7 @@ app.include_router(thread_api.router, prefix="/api", tags=["thread"])
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint for Electron and monitoring."""
-    return JSONResponse({"status": "ok", "version": "0.1.0"})
+    return JSONResponse({"status": "ok", "version": "0.1.0", "build": "20260619-2036"})
 
 
 @app.get("/api/health/debug")

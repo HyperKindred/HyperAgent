@@ -183,27 +183,31 @@ async def stream_agent(
         else:
             input_messages = [("user", user_input)]
 
-        async for event in agent.astream_events(
-            {"messages": input_messages},
-            config,
-            version="v2",
-        ):
-            if event["event"] == "on_chat_model_stream":
-                content = event["data"]["chunk"].content
-                if content:
-                    yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+        try:
+            async for event in agent.astream_events(
+                {"messages": input_messages},
+                config,
+                version="v2",
+            ):
+                if event["event"] == "on_chat_model_stream":
+                    content = event["data"]["chunk"].content
+                    if content:
+                        yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+        except BaseException as inner_e:
+            # Simple marker to verify new build is running
+            err_type = type(inner_e).__name__
+            err_msg = str(inner_e)
+            logger.exception("astream_events inner error")
+            yield f"data: {json.dumps({'type': 'error', 'content': f'[v2-inner] {err_type}: {err_msg}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            return
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        error_msg = str(e)
-        logger.exception("stream_agent failed: %s\n%s", error_msg, tb)
-        # V2 format — if you see "v2|" in the error, it's the new build
-        detail = f"v2|{type(e).__name__}: {error_msg}\n{tb}"
-        if len(detail) > 2000:
-            detail = detail[:2000] + "..."
-        yield f"data: {json.dumps({'type': 'error', 'content': f'请求失败: {detail}'})}\n\n"
+    except BaseException as e:
+        err_type = type(e).__name__
+        err_msg = str(e)
+        logger.exception("stream_agent outer error")
+        yield f"data: {json.dumps({'type': 'error', 'content': f'[v2-outer] {err_type}: {err_msg}'})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 

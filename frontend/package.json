@@ -8,8 +8,8 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k \"vite\" \"electron ../electron/main.cjs --dev\"",
-    "electron:dev:wait": "concurrently -k \"vite\" \"wait-on http://localhost:5174 && electron ../electron/main.cjs --dev\"",
+    "electron:dev": "set HYPERAGENT_PORT=18080 && concurrently -k \"vite\" \"electron ../electron/main.cjs --dev\"",
+    "electron:dev:wait": "set HYPERAGENT_PORT=18080 && concurrently -k \"vite\" \"wait-on http://localhost:5174 && electron ../electron/main.cjs --dev\"",
     "electron:start": "electron ../electron/main.cjs",
     "dist": "npm run build && cd .. && uv run pyinstaller --onefile --name hyperagent-backend --distpath frontend/backend-resources --noconfirm --hidden-import=uvicorn.logging --hidden-import=uvicorn.loops.auto --hidden-import=uvicorn.protocols.http.auto backend_launcher.py && cd frontend && node -e \"require('fs').cpSync('../electron', 'electron', {recursive: true})\" && electron-builder --win --x64 --dir",
     "dist:dir": "npm run build && cd .. && uv run pyinstaller --onefile --name hyperagent-backend --distpath frontend/backend-resources --noconfirm --hidden-import=uvicorn.logging --hidden-import=uvicorn.loops.auto --hidden-import=uvicorn.protocols.http.auto backend_launcher.py && cd frontend && node -e \"require('fs').cpSync('../electron', 'electron', {recursive: true})\" && electron-builder --win --x64 --dir"

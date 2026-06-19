@@ -6,6 +6,16 @@ HyperAgent 后端启动入口（PyInstaller 专用）
 import os
 import sys
 
+# ── Debug: write a startup marker so we know which build is running ──
+_DBG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_startup_marker.log")
+try:
+    with open(_DBG_PATH, "w") as f:
+        f.write(f"started at {__import__('datetime').datetime.now()}\n")
+        f.write(f"exe: {sys.executable}\n")
+        f.write(f"HYPERAGENT_DATA_DIR={os.environ.get('HYPERAGENT_DATA_DIR', '(not set)')}\n")
+except Exception:
+    pass
+
 # ── 切换到 exe 所在目录 ────────────────────────────────────
 if getattr(sys, "frozen", False):
     exe_dir = os.path.dirname(sys.executable)
