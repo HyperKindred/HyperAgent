@@ -35,6 +35,7 @@ default = true
 
 [dependency-groups]
 dev = [
+    "freezegun>=1.5.5",
     "pytest>=9.0.3",
 ]
 
