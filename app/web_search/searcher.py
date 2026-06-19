@@ -2,6 +2,8 @@
 
 Tries DuckDuckGo first, then Bing (cn.bing.com, accessible in China),
 then falls back to the user-configured custom search engine URL.
+
+Uses selectolax for structured HTML parsing (more robust than regex).
 """
 
 from __future__ import annotations
@@ -9,7 +11,10 @@ from __future__ import annotations
 import html
 import logging
 import re
+
 import requests
+from selectolax.parser import HTMLParser
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -26,54 +31,67 @@ TIMEOUT = 15
 
 
 def _strip_tags(text: str) -> str:
+    """Strip leftover HTML tags and normalise whitespace."""
     text = re.sub(r"<[^>]+>", " ", text)
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
+def _node_text(node) -> str:
+    """Return the visible text content of a selectolax node."""
+    if node is None:
+        return ""
+    return _strip_tags(node.text(deep=True, separator=" "))
+
+
 def _parse_duckduckgo(html_text: str) -> list[dict]:
-    titles = re.findall(
-        r'<a\s+class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
-        html_text, re.DOTALL,
-    )
-    snippets = re.findall(
-        r'<a\s+class="result__snippet"[^>]*>(.*?)</a>',
-        html_text, re.DOTALL,
-    )
-    if not titles:
-        titles = re.findall(
-            r'<a\s+rel="nofollow"[^>]*href="(https?://[^"]*)"[^>]*>(.*?)</a>',
-            html_text, re.DOTALL,
-        )
-    if not snippets:
-        snippets = re.findall(
-            r'class="result__snippet"[^>]*>(.*?)</(?:a|span|div)>',
-            html_text, re.DOTALL,
-        )
+    """Parse DuckDuckGo HTML search results using CSS selectors."""
+    parser = HTMLParser(html_text)
     results = []
-    for i in range(min(len(titles), len(snippets) if snippets else len(titles))):
-        url = titles[i][0] if isinstance(titles[i], tuple) else ""
-        title = _strip_tags(titles[i][1] if isinstance(titles[i], tuple) else titles[i])
-        snippet = _strip_tags(snippets[i] if i < len(snippets) else "")
-        results.append({"title": title, "url": url, "snippet": snippet})
+
+    for article in parser.css(".result"):
+        # First try .result__a for the link, then fall back to .result__title a
+        link_el = article.css_first(".result__a")
+        if link_el is None:
+            link_el = article.css_first(".result__title a")
+        if link_el is None:
+            continue
+
+        url = link_el.attributes.get("href", "")
+        title = _node_text(link_el)
+
+        # Try multiple snippet selectors in order
+        snippet_el = (
+            article.css_first(".result__snippet")
+            or article.css_first(".result__snippet a")
+        )
+        snippet = _node_text(snippet_el) if snippet_el else ""
+
+        if title or snippet:
+            results.append({"title": title, "url": url, "snippet": snippet})
+
     return results
 
 
 def _parse_bing(html_text: str) -> list[dict]:
+    """Parse Bing HTML search results using CSS selectors."""
+    parser = HTMLParser(html_text)
     results = []
-    blocks = re.findall(r'<li\s+class="b_algo"[^>]*>(.*?)</li>', html_text, re.DOTALL)
-    for block in blocks[:8]:
-        link = re.search(r'<h2[^>]*>.*?<a\s+href="([^"]*)"[^>]*>(.*?)</a>', block, re.DOTALL)
-        if not link:
+
+    for block in parser.css("li.b_algo"):
+        link_el = block.css_first("h2 a")
+        if link_el is None:
             continue
-        url = link.group(1)
-        title = _strip_tags(link.group(2))
-        snippet = ""
-        sp = re.search(r'<p[^>]*>(.*?)</p>', block, re.DOTALL)
-        if sp:
-            snippet = _strip_tags(sp.group(1))
+
+        url = link_el.attributes.get("href", "")
+        title = _node_text(link_el)
+
+        snippet_el = block.css_first("p")
+        snippet = _node_text(snippet_el) if snippet_el else ""
+
         results.append({"title": title, "url": url, "snippet": snippet})
+
     return results
 
 
@@ -107,8 +125,14 @@ def _try_custom(query: str, url: str | None) -> list[dict] | None:
     try:
         resp = session.get(url, params={"q": query}, timeout=TIMEOUT)
         resp.raise_for_status()
-        links = re.findall(r'<a[^>]*href="(https?://[^"]*)"[^>]*>(.*?)</a>', resp.text, re.DOTALL)
-        return [{"title": _strip_tags(t), "url": u, "snippet": ""} for u, t in links[:8]]
+        parser = HTMLParser(resp.text)
+        results = []
+        for link in parser.css("a[href^=http]"):
+            href = link.attributes.get("href", "")
+            text = _node_text(link)
+            if text:
+                results.append({"title": text, "url": href, "snippet": ""})
+        return results[:8] if results else None
     except requests.RequestException as e:
         logger.warning("Custom search failed: %s", e)
         return None
@@ -118,9 +142,12 @@ def _fetch_url_content(url: str, max_chars: int = 2000) -> str:
     try:
         resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
         resp.raise_for_status()
-        text = re.sub(r'<script[^>]*>.*?</script>', "", resp.text, flags=re.DOTALL)
-        text = re.sub(r'<style[^>]*>.*?</style>', "", text, flags=re.DOTALL)
-        text = _strip_tags(text)
+        parser = HTMLParser(resp.text)
+        # Remove script and style nodes before extracting text
+        for tag in ("script", "style"):
+            for node in parser.css(tag):
+                node.decompose()
+        text = parser.body.text(deep=True, separator=" ")
         text = re.sub(r"\s+", " ", text).strip()
         return text[:max_chars]
     except requests.RequestException as e:
