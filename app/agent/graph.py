@@ -196,13 +196,13 @@ async def stream_agent(
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
     except Exception as e:
         import traceback
-        tb = traceback.format_exception_only(type(e), e)
-        error_msg = str(e) or tb[-1] if tb else "Unknown error"
-        logger.exception("stream_agent failed: %s", error_msg)
-        # Include the error type + short traceback for debugging
-        detail = f"{type(e).__name__}: {error_msg}"
-        if len(detail) > 500:
-            detail = detail[:500] + "..."
+        tb = traceback.format_exc()
+        error_msg = str(e)
+        logger.exception("stream_agent failed: %s\n%s", error_msg, tb)
+        # Include full traceback in the response for debugging
+        detail = f"{type(e).__name__}: {error_msg}\n{tb}"
+        if len(detail) > 2000:
+            detail = detail[:2000] + "..."
         yield f"data: {json.dumps({'type': 'error', 'content': f'请求失败: {detail}'})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
@@ -319,6 +319,9 @@ def _trim_if_needed(agent, config: dict) -> None:
 
     messages = snapshot.values.get("messages", []) or [] if snapshot.values else []
     if len(messages) <= max_msgs:
+        # Even when no trimming is needed, clean up any orphaned tool_call
+        # AI messages left over from a previous mid-stream interruption.
+        _remove_orphan_tool_calls(agent, config, messages)
         return
 
     excess = len(messages) - max_msgs
@@ -351,18 +354,59 @@ def _trim_if_needed(agent, config: dict) -> None:
                     tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
                     if tc_id:
                         kept_tc_ids.add(tc_id)
-    orphan_ai = kept_tc_ids - removed_tc_ids
+    orphan_ai_ids = kept_tc_ids - removed_tc_ids
     for msg in messages[excess:]:
         if getattr(msg, "type", "") == "ai":
             tcs = getattr(msg, "tool_calls", None)
             if tcs:
                 for tc in tcs:
                     tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
-                    if tc_id and tc_id not in orphan_ai:
-                        # This AI's tool_call has no ToolMessage → orphaned
+                    if tc_id and tc_id not in orphan_ai_ids:
                         if msg not in to_remove:
                             to_remove.append(msg)
 
     removals = [RemoveMessage(id=m.id) for m in to_remove]
     agent.update_state(config, {"messages": removals})
+
+
+def _remove_orphan_tool_calls(agent, config: dict, messages: list) -> None:
+    """Remove AI messages that have tool_calls but no matching ToolMessage.
+
+    This can happen when a streaming turn is interrupted mid-flight
+    (page refresh, network error, etc.), leaving an orphaned tool_call.
+    """
+    tool_call_ids = set()
+    tool_result_ids = set()
+
+    for msg in messages:
+        if getattr(msg, "type", "") == "ai":
+            tcs = getattr(msg, "tool_calls", None)
+            if tcs:
+                for tc in tcs:
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if tc_id:
+                        tool_call_ids.add(tc_id)
+        elif getattr(msg, "type", "") == "tool":
+            tc_id = getattr(msg, "tool_call_id", None)
+            if tc_id:
+                tool_result_ids.add(tc_id)
+
+    orphaned = tool_call_ids - tool_result_ids
+    if not orphaned:
+        return
+
+    to_remove = []
+    for msg in messages:
+        if getattr(msg, "type", "") == "ai":
+            tcs = getattr(msg, "tool_calls", None)
+            if tcs:
+                for tc in tcs:
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if tc_id and tc_id in orphaned:
+                        to_remove.append(msg)
+                        break
+
+    if to_remove:
+        removals = [RemoveMessage(id=m.id) for m in to_remove]
+        agent.update_state(config, {"messages": removals})
 
