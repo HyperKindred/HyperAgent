@@ -23,7 +23,7 @@
 | 📅 **日程管理** | 自然语言 CRUD + 中文时间解析 + 日历 UI，双通道同步 |
 | 🧠 **RAG 语义记忆** | OpenRouter Embedding API 向量化 + 余弦相似度检索，API 不可用自动降级 LIKE 搜索 |
 | 🔔 **定时提醒** | APScheduler + SQLite，到点弹窗原生通知，支持周期性提醒 |
-| 🌐 **联网搜索** | DuckDuckGo → Bing 多后端兜底，自动抓取内容摘要 |
+| 🌐 **联网搜索** | DuckDuckGo → Bing 多后端兜底，selectolax 结构化解析，自动抓取内容摘要 |
 | ☁️ **天气查询** | OpenWeatherMap / wttr.in 降级方案 |
 | 🧮 **计算与换算** | 安全数学运算 + 单位换算（公里↔英里、温度、重量等） |
 | 🕐 **时区时间** | 支持中文时区简称和 IANA 名称，自动时差计算 |
@@ -32,7 +32,7 @@
 | 🐙 **GitHub 集成** | 通知查询、Issue/PR 搜索与创建 |
 | 📝 **Notion 集成** | 页面搜索、内容读取、页面创建、数据库查询 |
 | 📧 **QQ 邮箱** | SMTP 发件 + IMAP 收件/搜索，支持中文编码 |
-| 🖥️ **Electron 桌面** | 系统托盘 + 原生通知 + 后端自动管理 |
+| 🖥️ **Electron 桌面** | 系统托盘 + 原生通知 + 后端自动管理，一键构建免安装版 |
 | 💬 **自由对话** | 闲聊共情 + 个性化回复（基于语义记忆） |
 
 ### 当前技术栈
@@ -41,8 +41,8 @@
 |----|------|
 | LLM 推理 | DeepSeek V4 Flash（OpenCode Go 套餐） |
 | 视觉理解 | Kimi K2.6（OpenCode） |
-| Agent 框架 | LangGraph create_react_agent（**30 个工具**） |
-| 向量记忆 | OpenRouter qwen/qwen3-embedding-8b（**124 个测试**） |
+| Agent 框架 | LangGraph create_react_agent（**34 个工具**） |
+| 向量记忆 | OpenRouter qwen/qwen3-embedding-8b（**156 个测试**） |
 | 对话持久化 | LangGraph SqliteSaver |
 | 后端 | FastAPI + uvicorn |
 | 前端 | Vue 3 + TypeScript + Vite |
@@ -58,6 +58,10 @@
 - **跨渠道通知** — REST 操作 → CalendarNotification → agent 消费注入
 - **对话裁剪** — _trim_if_needed() 防 context window 溢出
 - **Agent 缓存** — ChatOpenAI 实例 + checkpointer 缓存
+- **通知去重** — 原子 `mark_fired` + `threading.Lock` 保护 SSE 客户端，消除重复弹窗
+- **时区统一** — `app/utils/time.py` 提供 `now_utc()`，全部模型统一 UTC 存储
+- **结构化搜索解析** — selectolax CSS 选择器替代手写正则，mock 测试覆盖
+- **XSS 防护** — DOMPurify 清洗 marked 输出，防止 LLM 注入 HTML/脚本
 
 ## 2. 分阶段路线图
 
@@ -85,6 +89,26 @@
 - [x] 多模态支持
 - [x] 文件上传处理（上传 PDF / Word / TXT / 图片给 agent 分析）
 - [x] 第三方集成（GitHub / Notion / QQ 邮箱）
+
+### Phase 2.5 — 地基加固（3 周，v0.2.1）
+
+目标：修复 Phase 1-2 中隐蔽的关键缺陷，确保记忆/提醒/搜索在真实使用中可靠。
+
+> 全代码库审计发现 10 个关键缺陷，修复后测试从 124 → 156。
+
+- [x] **时区统一** — 创建 `app/utils/time.py`，全部模型统一 UTC 存储（消除 off-by-N-hours）
+- [x] **通知去重** — `fire_reminder` 原子 `mark_fired` + `threading.Lock` 保护 `_sse_clients`
+- [x] **内存泄漏修复** — ReminderRepository 6 方法补 rollback，消除 `"cannot commit"` 异常
+- [x] **记忆搜索性能** — 全表扫描 → `LIMIT 200` + `ORDER BY importance DESC LIMIT 5`
+- [x] **Embedding 稳健** — 输入截断（24K chars）+ 余弦相似度维度校验
+- [x] **Web 搜索重构** — selectolax 替代正则，21 个 mock 测试覆盖 DuckDuckGo/Bing
+- [x] **APScheduler 测试** — 11 个测试覆盖通知去重/安全扫描/调度生命周期
+- [x] **XSS 修复** — ChatView + DOMPurify 清洗 marked 输出
+- [x] **前端错误处理** — CalendarView 所有 `catch {}` 改为错误提示；非乐观删除
+- [x] **LocalStorage 防抖** — watch + debounce(500ms)，消除逐 token 卡顿
+- [x] **杂项修复** — timezone_tool crash、异常吞咽、prompt 编号、数据库静默迁移
+
+验证：**156 个测试全部通过**，前端 vue-tsc + vite build 成功
 
 ### Phase 3 — 深度个性化（2-3 月）
 
