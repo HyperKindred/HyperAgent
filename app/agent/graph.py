@@ -199,8 +199,8 @@ async def stream_agent(
         tb = traceback.format_exc()
         error_msg = str(e)
         logger.exception("stream_agent failed: %s\n%s", error_msg, tb)
-        # Include full traceback in the response for debugging
-        detail = f"{type(e).__name__}: {error_msg}\n{tb}"
+        # V2 format — if you see "v2|" in the error, it's the new build
+        detail = f"v2|{type(e).__name__}: {error_msg}\n{tb}"
         if len(detail) > 2000:
             detail = detail[:2000] + "..."
         yield f"data: {json.dumps({'type': 'error', 'content': f'请求失败: {detail}'})}\n\n"
