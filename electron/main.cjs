@@ -25,6 +25,10 @@ const IS_WINDOWS = process.platform === 'win32'
 
 const REPO_ROOT = path.resolve(__dirname, '..')
 
+// Force userData to a consistent location so packaged builds don't pick
+// the wrong path based on package.json "name" ("frontend" → %APPDATA%/frontend).
+app.setPath('userData', path.join(app.getPath('appData'), 'HyperAgent'))
+
 // ── Child processes ─────────────────────────────────────────────────
 /** @type {import('child_process').ChildProcess[]} */
 const children = []
