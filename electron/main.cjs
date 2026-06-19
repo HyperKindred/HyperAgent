@@ -156,6 +156,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200, height: 800, minWidth: 800, minHeight: 600,
     title: 'HyperAgent',
+    autoHideMenuBar: true,  // 隐藏 File/Edit 菜单栏
     icon: (() => {
       const ico = path.join(__dirname, 'icon.ico')
       const png = path.join(__dirname, 'icon.png')
