@@ -252,7 +252,7 @@ def _sanitize_history_for_model(agent, config: dict, model: str | None) -> None:
         snapshot = agent.get_state(config)
     except Exception:
         return
-    messages = snapshot.values.get("messages", []) if snapshot.values else []
+    messages = snapshot.values.get("messages", []) or [] if snapshot.values else []
     if not messages:
         return
 
@@ -317,7 +317,7 @@ def _trim_if_needed(agent, config: dict) -> None:
     except Exception:
         return
 
-    messages = snapshot.values.get("messages", []) if snapshot.values else []
+    messages = snapshot.values.get("messages", []) or [] if snapshot.values else []
     if len(messages) <= max_msgs:
         return
 
