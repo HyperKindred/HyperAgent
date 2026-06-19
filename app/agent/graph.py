@@ -195,12 +195,15 @@ async def stream_agent(
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
     except Exception as e:
-        error_msg = str(e)
+        import traceback
+        tb = traceback.format_exception_only(type(e), e)
+        error_msg = str(e) or tb[-1] if tb else "Unknown error"
         logger.exception("stream_agent failed: %s", error_msg)
-        # Truncate very long error messages (e.g. full API responses)
-        if len(error_msg) > 300:
-            error_msg = error_msg[:300] + "..."
-        yield f"data: {json.dumps({'type': 'error', 'content': f'请求失败: {error_msg}'})}\n\n"
+        # Include the error type + short traceback for debugging
+        detail = f"{type(e).__name__}: {error_msg}"
+        if len(detail) > 500:
+            detail = detail[:500] + "..."
+        yield f"data: {json.dumps({'type': 'error', 'content': f'请求失败: {detail}'})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
