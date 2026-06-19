@@ -333,13 +333,35 @@ def _trim_if_needed(agent, config: dict) -> None:
                     removed_tc_ids.add(tc_id)
 
     to_remove = messages[:excess]
-    # Extend removal: also remove tool responses whose parent AI message
-    # with tool_calls was just removed (prevents orphaned tool messages).
+    # Remove tool responses whose parent AI message was just removed.
     for msg in messages[excess:]:
         if getattr(msg, "type", "") == "tool":
             tc_id = getattr(msg, "tool_call_id", None)
             if tc_id and tc_id in removed_tc_ids:
                 to_remove.append(msg)
+
+    # Also remove AI messages in the kept section whose tool_call has no
+    # matching ToolMessage left (their ToolMessage was in the removed section).
+    kept_tc_ids: set[str] = set()
+    for msg in messages[excess:]:
+        if getattr(msg, "type", "") == "ai":
+            tcs = getattr(msg, "tool_calls", None)
+            if tcs:
+                for tc in tcs:
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if tc_id:
+                        kept_tc_ids.add(tc_id)
+    orphan_ai = kept_tc_ids - removed_tc_ids
+    for msg in messages[excess:]:
+        if getattr(msg, "type", "") == "ai":
+            tcs = getattr(msg, "tool_calls", None)
+            if tcs:
+                for tc in tcs:
+                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if tc_id and tc_id not in orphan_ai:
+                        # This AI's tool_call has no ToolMessage → orphaned
+                        if msg not in to_remove:
+                            to_remove.append(msg)
 
     removals = [RemoveMessage(id=m.id) for m in to_remove]
     agent.update_state(config, {"messages": removals})
