@@ -184,6 +184,14 @@ function createWindow() {
     }
   })
 
+  // Log state changes to diagnose tray hide/show issues
+  mainWindow.on('show', () => {
+    console.log('[electron] Window shown (backend still running?)')
+  })
+  mainWindow.on('hide', () => {
+    console.log('[electron] Window hidden to tray')
+  })
+
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
@@ -243,6 +251,21 @@ ipcMain.on('show-notification', (_event, { title, body }) => {
 })
 
 // ── App lifecycle ──────────────────────────────────────────────────────
+// Prevent multiple instances (double-clicking the exe while running)
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  console.log('[electron] Another instance is running, quitting.')
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 app.whenReady().then(async () => {
   // 1. Start backend
   spawnBackend()
