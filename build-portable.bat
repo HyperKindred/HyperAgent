@@ -44,34 +44,19 @@ copy ..\electron\tray-icon.png electron\ >nul 2>&1
 call npx electron-builder --win --x64 --dir
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-rem ---- (5/5) Copy config and pack -----------------------------------
-echo === (5/5) Copy config and pack ===
+rem ---- (5/5) Copy config --------------------------------------------
+echo === (5/5) Copy config ===
 copy backend-resources\.env ..\electron-dist\win-unpacked\.env
 copy backend-resources\.env.example ..\electron-dist\win-unpacked\.env.example
 
 if exist "..\electron-dist\HyperAgent" rmdir /s /q "..\electron-dist\HyperAgent"
 rename ..\electron-dist\win-unpacked "HyperAgent"
 
-set DIST_DIR=..\electron-dist
-set PORTABLE_DIR=%DIST_DIR%\HyperAgent
-set ZIP_NAME=%DIST_DIR%\HyperAgent-v%VERSION%-portable.zip
-
-if exist "%ZIP_NAME%" del "%ZIP_NAME%"
-
-echo === (6/5) Creating zip archive (excluding .env) ===
-powershell -Command "Get-ChildItem '%PORTABLE_DIR%' -Exclude '.env' | Compress-Archive -DestinationPath '%ZIP_NAME%' -Force"
-if %errorlevel% neq 0 (
-    echo Compress-Archive failed, trying tar...
-    cd "%DIST_DIR%"
-    tar -acf "HyperAgent-v%VERSION%-portable.zip" --exclude=".env" "HyperAgent"
-)
-
 echo ===========================================
 echo  Done!
 echo ===========================================
 echo.
-echo  Portable:  %PORTABLE_DIR%\   (double-click HyperAgent.exe)
-echo  Release:    %ZIP_NAME%
+echo  Portable:  ..\electron-dist\HyperAgent\   (double-click HyperAgent.exe)
 echo.
 echo  Version:   v%VERSION%
 echo  Time:      %DATE% %TIME%
