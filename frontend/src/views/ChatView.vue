@@ -3,7 +3,7 @@ import { ref, nextTick, onMounted, computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { sendChatStream, createThread } from '../api/client'
-import { chatStore, initWelcomeMessage, loadThreadList } from '../store/chat'
+import { chatStore, initWelcomeMessage } from '../store/chat'
 import { MessageSquare, Send, Square, Paperclip, FileText, Code, File, X, Image as ImageIcon } from '@lucide/vue'
 
 const input = ref('')
@@ -222,8 +222,6 @@ async function handleSend() {
     }
   } finally {
     loading.value = false
-    // Refresh sidebar ordering — this thread's updated_at just changed
-    await loadThreadList()
     await nextTick()
     scrollToBottom()
   }

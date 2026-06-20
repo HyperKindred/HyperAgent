@@ -20,12 +20,33 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Scope, Receive, Send
 
 from app.api import chat, reminder as reminder_api, schedule
 from app.api import thread as thread_api
 from app.schedule.database import init_db
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+# ── Diagnostic ASGI middleware: catches any exception at the ASGI level ──
+class _CatchAllMiddleware:
+    """Log ALL unhandled exceptions to a debug file before they crash."""
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        try:
+            await self.app(scope, receive, send)
+        except BaseException as exc:
+            import traceback
+            tb = traceback.format_exc()
+            log_dir = os.environ.get("APPDATA", os.getcwd())
+            log_path = os.path.join(log_dir, "HyperAgent", "_asgi_crash.log")
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, "w") as f:
+                f.write(f"ASGI caught: {type(exc).__name__}: {exc}\n{tb}\n")
+            raise  # re-raise so the server still handles it
 
 
 def _find_frontend_dist() -> Path | None:
@@ -86,6 +107,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Wrap the ASGI app in our catch-all ──────────────────────────────
+app.add_middleware(_CatchAllMiddleware)
 
 # ── API routers ──────────────────────────────────────────────────────
 app.include_router(chat.router, prefix="/api", tags=["chat"])

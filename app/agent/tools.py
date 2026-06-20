@@ -407,7 +407,11 @@ def recall_facts_tool(query: str, category: str | None = None) -> str:
     Returns:
         匹配的记忆列表（按语义相关性排序）
     """
-    results = memory_repo.search_similar(query, top_k=5, category=category)
+    try:
+        results = memory_repo.search_similar(query, top_k=5, category=category)
+    except Exception as exc:
+        logger.warning("search_similar failed: %s", exc)
+        results = []
     if not results:
         return f"🔍 没有找到与「{query}」相关的记忆。"
 

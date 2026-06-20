@@ -194,7 +194,10 @@ async def stream_agent(
                     if content:
                         yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
         except BaseException as inner_e:
-            # Simple marker to verify new build is running
+            import os as _os
+            _dbg = _os.path.join(_os.environ.get("APPDATA", _os.getcwd()), "HyperAgent", "_stream_debug.log")
+            with open(_dbg, "w") as _f:
+                _f.write(f"inner caught: {type(inner_e).__name__}: {inner_e}\n")
             err_type = type(inner_e).__name__
             err_msg = str(inner_e)
             logger.exception("astream_events inner error")
