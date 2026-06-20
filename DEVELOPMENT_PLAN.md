@@ -108,6 +108,18 @@
 - [x] **LocalStorage 防抖** — watch + debounce(500ms)，消除逐 token 卡顿
 - [x] **杂项修复** — timezone_tool crash、异常吞咽、prompt 编号、数据库静默迁移
 
+#### Phase 2.5 追加修复（v0.2.1）
+
+- [x] **数据持久化** — `config.py` 支持 `HYPERAGENT_DATA_DIR` 环境变量，打包版数据存 `%APPDATA%/HyperAgent/`，版本更新不丢失
+- [x] **Electron 单实例锁** — `app.requestSingleInstanceLock()` 防止重复启动导致数据混乱
+- [x] **Vite 代理端口** — `vite.config.ts` 读取 `HYPERAGENT_PORT` 环境变量，解决 `electron:dev` 模式代理到 18080
+- [x] **前端 dist 打包** — `extraResources` 改为包含整个 `backend-resources/`，前端文件随后端 exe 一起部署
+- [x] **侧边栏线程丢失** — 去掉 `finally` 块中 `loadThreadList()` 覆盖侧边栏，防止 `createThread` API 失败时本地 ID 被空列表覆盖
+- [x] **对话裁剪孤立 tool_call** — `_trim_if_needed` 清除残留的有 tool_call 无 ToolMessage 的 AI 消息
+- [x] **菜单栏隐藏** — `autoHideMenuBar: true`
+- [x] **后台节流** — `backgroundThrottling: false` 防止窗口最小化时定时器挂起
+- [x] **`recall_facts_tool` 容错** — `search_similar` 加 try/except，防止内部异常传播到 LangGraph 导致 `len(None)` 崩溃
+
 验证：**156 个测试全部通过**，前端 vue-tsc + vite build 成功
 
 ### Phase 3 — 深度个性化（2-3 月）
@@ -123,6 +135,16 @@
 - [ ] 主动建议引擎（"你最近总熬夜"、"该准备下周的会了"）
 - [ ] 情绪感知与适应该情绪状态的回应风格
 - [ ] 引入本地向量数据库（Chroma / LanceDB），消除对外部 Embedding API 的依赖
+
+### Phase 3.5 — 配置系统与分发准备（2-3 周）
+
+目标：让 HyperAgent 真正可分发——无需手动编辑 `.env`，首次启动即可用。
+
+- [ ] **配置 API** — `GET/PUT /api/settings` 读写 `.env` 配置项，分类返回（LLM / 集成 / 天气 / 时区等）
+- [ ] **首次启动向导** — 检测无 `.env` → 自动创建含默认值（免费 API 如 wttr.in 天气直接可用）
+- [ ] **配置前端页面** — 设置界面，各配置项分组展示，API Key 输入框、模型选择、时区选择
+- [ ] **一键分发构建** — `build-portable.bat` 输出可直接给他人使用的压缩包
+- [ ] **环境变量校验** — 后端启动时检查关键配置缺失，通过 SSE 推送配置提醒
 
 ### Phase 4 — 感知与行动边界（3-6 月）
 
