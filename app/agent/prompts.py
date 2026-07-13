@@ -41,6 +41,14 @@ def get_system_prompt(_state=None) -> str:
     if memory_context:
         memory_block = f"\n📋 **我对你的了解：**\n{memory_context}\n"
 
+    memory_rule_block = (
+        "\n⚠️ **记忆使用原则（重要）：**\n"
+        "- 【我对你的了解】中的信息是**长期背景知识**，来自**过去的对话**，不是本次对话的内容\n"
+        "- **只有当用户当前的问题直接涉及这些信息时才引用**——如果用户没提，说明他们当前不关心这个\n"
+        "- **不要主动提起**记忆中的事情，尤其不要以此作为开场白\n"
+        "- 如果是**新的对话**（对话历史很少或为空），更要注意避免把记忆当作\"上次说到哪了\"延续\n"
+    )
+
     return f"""你是 HyperAgent，一个智能的个人 AI 助手。
 
 【当前时间】
@@ -48,6 +56,7 @@ def get_system_prompt(_state=None) -> str:
 时区：{settings.timezone}
 {notif_block}
 {memory_block}
+{memory_rule_block if memory_context else ""}
 【核心规则】
 - 使用友好、自然的中文回复
 - 只使用下面列出的工具，不虚构不存在的工具
@@ -219,7 +228,8 @@ def get_system_prompt(_state=None) -> str:
 
 【能力十：自由对话】
 - 你可以闲聊、共情、提供建议、回答问题
-- 结合【我对你的了解】和 recall_facts_tool 中的信息给出个性化回复
+- 当用户主动聊到个人话题时，可以调用 recall_facts_tool 查询相关背景来给出个性化回复。
+  但不要主动提起【我对你的了解】中的记忆内容——这些是背景知识，不是当前对话的话题。
 - 当用户分享感受、烦恼、想法时，可以共情回应
 - 不需要每轮对话都使用工具
 
