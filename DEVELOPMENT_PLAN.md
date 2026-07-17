@@ -42,7 +42,7 @@
 | LLM 推理 | GPT-5.6 Terra（OpenAI 兼容供应商可配置） |
 | 视觉理解 | 默认复用聊天模型，可独立配置 |
 | Agent 框架 | LangGraph create_react_agent（**30 个工具**） |
-| 向量记忆 | 自动探测 + OpenRouter qwen/qwen3-embedding-8b 回退（**214 个测试**） |
+| 向量记忆 | 自动探测 + OpenRouter qwen/qwen3-embedding-8b 回退（**217 个测试**） |
 | 对话持久化 | LangGraph SqliteSaver |
 | 后端 | FastAPI + uvicorn |
 | 前端 | Vue 3 + TypeScript + Vite |
@@ -94,7 +94,7 @@
 
 目标：修复 Phase 1-2 中隐蔽的关键缺陷，确保记忆/提醒/搜索在真实使用中可靠。
 
-> 已完成基础审计与 API 迁移，当前后端回归为 214 项测试。
+> 已完成基础审计与 API 迁移，当前后端回归为 217 项测试。
 
 - [x] **时区统一** — 创建 `app/utils/time.py`；日历 API 本地输入/UTC 存储/本地日期查询与展示统一（消除 off-by-N-hours）
 - [x] **通知去重** — `fire_reminder` 原子 `mark_fired` + `threading.Lock` 保护 `_sse_clients`
@@ -120,7 +120,7 @@
 - [x] **后台节流** — `backgroundThrottling: false` 防止窗口最小化时定时器挂起
 - [x] **`recall_facts_tool` 容错** — `search_similar` 加 try/except，防止内部异常传播到 LangGraph 导致 `len(None)` 崩溃
 
-验证：后端 **214 项测试**，前端 `vue-tsc` + `vite build` 成功；便携版产物经 `.env` / 已知 Key 扫描验证。
+验证：后端 **217 项测试**，前端 `vue-tsc` + `vite build` 成功；便携版产物经 `.env` / 已知 Key 扫描验证。
 
 ### Phase 3 — 深度个性化（2-3 月）
 

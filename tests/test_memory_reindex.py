@@ -58,3 +58,13 @@ def test_reindex_continues_after_one_embedding_failure(monkeypatch):
         assert rows[last_id].embedding_dimensions == 2
     finally:
         verify_session.close()
+
+
+def test_reindex_change_is_queued_when_a_run_is_already_active():
+    manager = ReindexManager()
+    manager._state = "running"
+
+    status = manager.start(restart_if_running=True)
+
+    assert status["state"] == "running"
+    assert manager._restart_requested is True

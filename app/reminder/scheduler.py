@@ -169,6 +169,23 @@ def cancel_reminder_job(reminder_id: int) -> None:
         pass  # Job may not exist
 
 
+def reschedule_recurring_jobs() -> int:
+    """Rebuild pending recurring jobs after the application timezone changes."""
+    if scheduler is None:
+        return 0
+
+    repo = ReminderRepository()
+    updated = 0
+    for reminder in repo.list_pending():
+        if not reminder.recurring:
+            continue
+        next_trigger = _schedule_recurring(reminder)
+        if next_trigger is not None:
+            repo.reschedule_recurring(reminder.id, next_trigger)
+            updated += 1
+    return updated
+
+
 def _scan_and_schedule() -> None:
     """Periodic scan: check DB for pending reminders that should have fired already.
 

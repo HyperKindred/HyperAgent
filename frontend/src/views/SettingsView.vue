@@ -101,8 +101,11 @@ const providerOptions = [
 const firstRun = computed(() => route.query.firstRun === '1')
 const visionModel = computed(() => form.vision_use_same_model ? form.llm_model : form.vision_model)
 const availableModels = computed(() => {
-  if (models.value.length) return models.value
-  return form.llm_model ? [form.llm_model] : []
+  return [...new Set([
+    ...models.value,
+    form.llm_model,
+    form.vision_model,
+  ].filter(Boolean))].sort()
 })
 const progress = computed(() => reindex.value.total
   ? Math.round((reindex.value.indexed + reindex.value.failed) / reindex.value.total * 100)
@@ -151,7 +154,7 @@ onBeforeUnmount(() => {
 
 function changeProvider() {
   const preset = providerOptions.find(option => option.value === form.provider)
-  if (preset?.url) {
+  if (preset) {
     form.llm_base_url = preset.url
     form.llm_model = preset.model
   }
@@ -175,7 +178,6 @@ async function refreshModels() {
     if (!models.value.length) {
       notice.value = { kind: 'error', text: '接口未返回可用模型' }
     } else {
-      if (!models.value.includes(form.llm_model)) form.llm_model = models.value[0]
       notice.value = { kind: 'ok', text: `已获取 ${models.value.length} 个可用模型` }
     }
   } catch (error) {
@@ -341,10 +343,13 @@ function startReindexPolling() {
           <label class="field span-2">
             <span>聊天模型</span>
             <div class="input-row model-picker">
-              <select v-model="form.llm_model" :disabled="discovering">
-                <option v-if="!availableModels.length" value="">请先刷新模型列表</option>
-                <option v-for="model in availableModels" :key="model" :value="model">{{ model }}</option>
-              </select>
+              <input
+                v-model.trim="form.llm_model"
+                list="provider-model-options"
+                autocomplete="off"
+                placeholder="输入模型 ID，或点击右侧刷新"
+                :disabled="discovering"
+              />
               <button
                 class="icon-button"
                 :disabled="discovering"
@@ -355,6 +360,9 @@ function startReindexPolling() {
                 <RefreshCw :size="16" :class="{ spin: discovering }" />
               </button>
             </div>
+            <datalist id="provider-model-options">
+              <option v-for="model in availableModels" :key="model" :value="model" />
+            </datalist>
           </label>
         </div>
         <div class="action-line">
@@ -377,10 +385,12 @@ function startReindexPolling() {
         </label>
         <label v-if="!form.vision_use_same_model" class="field compact-field">
           <span>视觉模型</span>
-          <select v-model="form.vision_model">
-            <option value="">请选择视觉模型</option>
-            <option v-for="model in availableModels" :key="model" :value="model">{{ model }}</option>
-          </select>
+          <input
+            v-model.trim="form.vision_model"
+            list="provider-model-options"
+            autocomplete="off"
+            placeholder="输入视觉模型 ID"
+          />
         </label>
         <div class="action-line">
           <button class="secondary-button" :disabled="testing.vision" @click="runTest('vision')">

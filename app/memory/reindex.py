@@ -19,6 +19,7 @@ class ReindexManager:
         self._indexed = 0
         self._failed = 0
         self._fingerprint: str | None = None
+        self._restart_requested = False
 
     def status(self) -> dict:
         with self._lock:
@@ -30,9 +31,11 @@ class ReindexManager:
                 "fingerprint": self._fingerprint,
             }
 
-    def start(self) -> dict:
+    def start(self, *, restart_if_running: bool = False) -> dict:
         with self._lock:
             if self._state == "running":
+                if restart_if_running:
+                    self._restart_requested = True
                 return self.status()
             self._state = "running"
             self._total = self._indexed = self._failed = 0
@@ -82,6 +85,13 @@ class ReindexManager:
                 self._state = "failed"
         finally:
             db.close()
+            with self._lock:
+                restart = self._restart_requested
+                self._restart_requested = False
+                if restart:
+                    self._state = "idle"
+            if restart:
+                self.start()
 
 
 reindex_manager = ReindexManager()

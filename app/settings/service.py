@@ -178,10 +178,12 @@ class RuntimeSettingsService:
     ) -> dict[str, Any]:
         with self._lock:
             old_fields = {name: getattr(settings, name) for name in PERSISTED_FIELDS}
+            old_runtime_secrets = {
+                name: getattr(settings, name) for name in SECRET_FIELDS
+            }
             old_disabled = dict(self._secret_disabled)
-            old_secrets = {
-                LLM_SECRET: self.secret_store.get(LLM_SECRET),
-                EMBEDDING_SECRET: self.secret_store.get(EMBEDDING_SECRET),
+            old_stored_secrets = {
+                name: self.secret_store.get(name) for name in SECRET_FIELDS
             }
             try:
                 for name, value in values.items():
@@ -217,8 +219,10 @@ class RuntimeSettingsService:
             except Exception:
                 for name, value in old_fields.items():
                     setattr(settings, name, value)
+                for name, value in old_runtime_secrets.items():
+                    setattr(settings, name, value)
                 self._secret_disabled = old_disabled
-                for name, value in old_secrets.items():
+                for name, value in old_stored_secrets.items():
                     try:
                         if value is None:
                             self.secret_store.delete(name)

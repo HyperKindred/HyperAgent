@@ -2,7 +2,7 @@
 
 智能个人 AI 助手 —— 基于 LangGraph + OpenAI 兼容模型，支持可视化模型配置、日程管理、RAG 语义记忆、逐 token 流式对话、**GitHub / Notion / QQ 邮箱三方集成**，带 Electron 桌面应用。
 
-> **v0.2.1** — 支持可视化模型配置、安全凭据存储、记忆与对话备份。当前后端回归覆盖 214 项测试。
+> **v0.2.1** — 支持可视化模型配置、安全凭据存储、记忆与对话备份。当前后端回归覆盖 217 项测试。
 
 ## 功能
 
@@ -30,7 +30,7 @@
 | Agent 框架 | LangGraph `create_react_agent`（**30 个工具**） |
 | 向量记忆 | SQLite + 自动探测聊天供应商 Embedding，失败后回退 OpenRouter |
 | 对话持久化 | LangGraph SqliteSaver |
-| 后端 | FastAPI（**214 个测试**） |
+| 后端 | FastAPI（**217 个测试**） |
 | 前端 | Vue 3 + Vite + TypeScript |
 | 桌面 | Electron（系统托盘 + 原生通知） |
 | 数据库 | SQLite（SQLAlchemy ORM） |
@@ -82,7 +82,7 @@ uv run python main.py
 ### 4. 测试
 
 ```bash
-uv run pytest -v        # 214 个测试
+uv run pytest -v        # 217 个测试
 ```
 
 ## 项目结构

@@ -148,6 +148,44 @@ def test_integration_credentials_are_kept_outside_runtime_settings_file(tmp_path
     assert reloaded.max_history_messages == 60
 
 
+def test_runtime_settings_rolls_back_all_credentials_when_json_save_fails(
+    tmp_path, monkeypatch
+):
+    secret_store = FakeSecretStore()
+    old_values = {
+        "llm_api_key": "old-llm",
+        "embedding_api_key": "old-embedding",
+        "github_token": "old-github",
+        "notion_token": "old-notion",
+        "qq_email_auth_code": "old-qq",
+        "weather_api_key": "old-weather",
+    }
+    secret_store.values.update(old_values)
+    service = RuntimeSettingsService(secret_store)
+    current = make_settings(tmp_path, **old_values)
+
+    def fail_write(_settings):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service, "_write", fail_write)
+    with pytest.raises(OSError, match="disk full"):
+        service.update(
+            current,
+            {"timezone": "Asia/Tokyo"},
+            llm_api_key="new-llm",
+            embedding_api_key="new-embedding",
+            github_token="new-github",
+            notion_token="new-notion",
+            qq_email_auth_code="new-qq",
+            weather_api_key="new-weather",
+        )
+
+    assert secret_store.values == old_values
+    assert current.timezone == "Asia/Shanghai"
+    for name, value in old_values.items():
+        assert getattr(current, name) == value
+
+
 def test_my_jarvis_preset_migrates_legacy_endpoint_and_model(tmp_path):
     (tmp_path / "settings.json").write_text(
         json.dumps(
@@ -257,6 +295,55 @@ def test_gpt56_client_omits_temperature_and_sets_tool_compatible_reasoning(monke
     assert captured["model"] == "gpt-5.6-terra"
     assert captured["reasoning_effort"] == "none"
     assert "temperature" not in captured
+
+
+def test_settings_change_refreshes_recurring_jobs_and_embedding_index(monkeypatch):
+    from app.agent import graph
+    from app.memory import embeddings, reindex
+    from app.reminder import scheduler
+
+    monkeypatch.setattr(settings_api.settings, "timezone", "Asia/Shanghai")
+    monkeypatch.setattr(settings_api.settings, "embedding_mode", "separate")
+    monkeypatch.setattr(settings_api.settings, "embedding_model", "old-model")
+    monkeypatch.setattr(graph, "reset_llm_cache", lambda: None)
+    monkeypatch.setattr(embeddings, "reset_embedding_probe", lambda: None)
+
+    calls = {"reminders": 0, "reindex": []}
+    monkeypatch.setattr(
+        scheduler,
+        "reschedule_recurring_jobs",
+        lambda: calls.__setitem__("reminders", calls["reminders"] + 1),
+    )
+
+    class FakeReindexManager:
+        def start(self, *, restart_if_running=False):
+            calls["reindex"].append(restart_if_running)
+            return self.status()
+
+        @staticmethod
+        def status():
+            return {
+                "state": "running",
+                "total": 0,
+                "indexed": 0,
+                "failed": 0,
+                "fingerprint": None,
+            }
+
+    monkeypatch.setattr(reindex, "reindex_manager", FakeReindexManager())
+
+    def fake_update(current, values, **_kwargs):
+        for name, value in values.items():
+            setattr(current, name, value)
+        return {"timezone": current.timezone}
+
+    monkeypatch.setattr(settings_api.runtime_settings, "update", fake_update)
+    result = settings_api.update_settings(
+        SettingsUpdate(timezone="Asia/Tokyo", embedding_model="new-model")
+    )
+
+    assert calls == {"reminders": 1, "reindex": [True]}
+    assert result["reindex"]["state"] == "running"
 
 
 def test_embedding_auto_mode_falls_back_to_separate_provider(monkeypatch):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -15,6 +16,7 @@ from app.config import settings
 from app.settings.service import runtime_settings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+logger = logging.getLogger(__name__)
 
 _TINY_PNG = base64.b64encode(
     base64.b64decode(
@@ -200,6 +202,20 @@ def _token_params(model: str) -> dict[str, object]:
     return {"max_tokens": 32}
 
 
+def _embedding_configuration() -> tuple[str, ...]:
+    """Capture fields that determine which provider creates stored vectors."""
+    values = [
+        settings.embedding_mode,
+        settings.embedding_base_url,
+        settings.embedding_model,
+        settings.embedding_auto_model,
+        settings.embedding_api_key,
+    ]
+    if settings.embedding_mode == "auto":
+        values.extend([settings.llm_base_url, settings.llm_api_key])
+    return tuple(values)
+
+
 @router.get("")
 def get_settings() -> dict:
     from app.memory.reindex import reindex_manager
@@ -211,6 +227,8 @@ def get_settings() -> dict:
 
 @router.put("")
 def update_settings(body: SettingsUpdate) -> dict:
+    previous_timezone = settings.timezone
+    previous_embedding_configuration = _embedding_configuration()
     values = body.model_dump(
         exclude={
             "llm_api_key",
@@ -278,6 +296,22 @@ def update_settings(body: SettingsUpdate) -> dict:
     reset_llm_cache()
     reset_embedding_probe()
     from app.memory.reindex import reindex_manager
+
+    if settings.timezone != previous_timezone:
+        from app.reminder.scheduler import reschedule_recurring_jobs
+
+        try:
+            reschedule_recurring_jobs()
+        except Exception:
+            logger.exception("Failed to reschedule recurring reminders after timezone change")
+    if (
+        settings.embedding_mode != "disabled"
+        and _embedding_configuration() != previous_embedding_configuration
+    ):
+        try:
+            reindex_manager.start(restart_if_running=True)
+        except Exception:
+            logger.exception("Failed to start embedding reindex after settings change")
 
     result["reindex"] = reindex_manager.status()
     return result
