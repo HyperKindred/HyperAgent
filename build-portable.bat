@@ -6,7 +6,7 @@ echo  HyperAgent Portable Build Script
 echo ===========================================
 echo.
 
-set VERSION=0.2.1
+set VERSION=0.2.2
 echo Version: %VERSION%
 
 rem ---- (1/5) Build frontend -------------------------------------------
