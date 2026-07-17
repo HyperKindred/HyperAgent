@@ -19,7 +19,8 @@ rem ---- (2/5) Prepare backend resources -------------------------------
 echo === (2/5) Prepare backend resources ===
 cd ..
 if not exist frontend\backend-resources mkdir frontend\backend-resources
-copy .env frontend\backend-resources\.env >nul
+if exist frontend\backend-resources\.env del /q frontend\backend-resources\.env
+copy .env.example frontend\backend-resources\.env.example >nul
 
 rem ---- (3/5) Build backend executable --------------------------------
 echo === (3/5) Build backend exe ===
@@ -44,13 +45,28 @@ copy ..\electron\tray-icon.png electron\ >nul 2>&1
 call npx electron-builder --win --x64 --dir
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-rem ---- (5/5) Copy config --------------------------------------------
-echo === (5/5) Copy config ===
-copy backend-resources\.env ..\electron-dist\win-unpacked\.env
+rem ---- (5/5) Copy safe config template -------------------------------
+echo === (5/5) Copy config template ===
 copy backend-resources\.env.example ..\electron-dist\win-unpacked\.env.example
+if %errorlevel% neq 0 exit /b %errorlevel%
 
-if exist "..\electron-dist\HyperAgent" rmdir /s /q "..\electron-dist\HyperAgent"
+if exist "..\electron-dist\HyperAgent" (
+  rmdir /s /q "..\electron-dist\HyperAgent"
+  if exist "..\electron-dist\HyperAgent" (
+    echo ERROR: Existing portable build is in use. Close HyperAgent and retry.
+    exit /b 1
+  )
+)
+if not exist "..\electron-dist\win-unpacked" (
+  echo ERROR: electron-builder did not create win-unpacked.
+  exit /b 1
+)
 rename ..\electron-dist\win-unpacked "HyperAgent"
+if %errorlevel% neq 0 exit /b %errorlevel%
+if not exist "..\electron-dist\HyperAgent\HyperAgent.exe" (
+  echo ERROR: Portable executable was not created.
+  exit /b 1
+)
 
 echo ===========================================
 echo  Done!

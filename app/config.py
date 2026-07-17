@@ -20,22 +20,25 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-v4-flash"
 
-    # Embedding API — OpenAI-compatible embedding endpoint.
-    # Defaults to DeepSeek if not overridden.
-    embedding_base_url: str = "https://api.deepseek.com/v1"
+    # Embedding API - kept separate because not every chat gateway exposes it.
+    embedding_mode: str = "auto"
+    embedding_base_url: str = "https://openrouter.ai/api/v1"
     embedding_api_key: str = ""
-    embedding_model: str = "deepseek-embedding"
+    embedding_model: str = "qwen/qwen3-embedding-8b"
+    embedding_auto_model: str = "text-embedding-3-small"
 
-    # LLM API — OpenAI-compatible chat gateway
-    llm_base_url: str = ""
+    # LLM API - OpenAI-compatible chat gateway
+    provider: str = "my_jarvis"
+    llm_base_url: str = "https://api.aijws.com/v1"
     llm_api_key: str = ""
-    llm_model: str = "deepseek-v4-flash"
-    llm_temperature: float = 0.7
+    llm_model: str = "gpt-5.6-terra"
+    llm_temperature: float | None = None
     llm_max_tokens: int = 4096
+    llm_reasoning_effort: str | None = "none"
 
-    # Vision API — separate model for multimodal (image) input
-    # When empty, image input falls back to the default LLM model
-    vision_model: str = "kimi-k2.6"
+    # Vision defaults to the chat model; a separate model remains configurable.
+    vision_use_same_model: bool = True
+    vision_model: str = ""
 
     # Storage — data directory for all SQLite databases.
     #
@@ -67,6 +70,7 @@ class Settings(BaseSettings):
     # How many past messages to keep (not counting the system prompt).
     # Set to 0 to disable trimming (keep everything forever).
     max_history_messages: int = 40
+    assistant_style: str = "balanced"
 
     # Logging
     log_level: str = "INFO"
@@ -88,4 +92,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Apply user-facing settings after .env has populated the compatibility layer.
+from app.settings.service import runtime_settings  # noqa: E402
+
+runtime_settings.load_into(settings)
 

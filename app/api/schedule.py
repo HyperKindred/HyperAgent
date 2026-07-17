@@ -1,14 +1,17 @@
 """Schedule REST endpoints – direct CRUD (bypasses LLM agent)."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException
+import pytz
 
+from app.config import settings
 from app.schedule.models import EventCreate, EventResponse, EventUpdate
 from app.schedule.notifier import notify_created, notify_deleted, notify_updated
 from app.schedule.repository import ScheduleRepository
 from app.reminder.repository import ReminderRepository
 from app.reminder.scheduler import cancel_reminder_job
+from app.utils.time import from_local
 
 router = APIRouter(prefix="/events")
 repo = ScheduleRepository()
@@ -30,7 +33,7 @@ def list_events(q: str | None = None, dt: date | None = None, month: str | None 
     elif dt:
         events = repo.list_events_by_date(dt)
     else:
-        now = datetime.now()
+        now = datetime.now(pytz.timezone(settings.timezone))
         events = repo.list_events_by_date(now.date())
     return [EventResponse.model_validate(e) for e in events]
 
@@ -45,14 +48,29 @@ def get_event(event_id: int) -> EventResponse:
 
 @router.post("", status_code=201)
 def create_event(data: EventCreate) -> EventResponse:
-    event = repo.create_event(data)
+    event = repo.create_event(
+        data.model_copy(
+            update={
+                "start_time": from_local(data.start_time, settings.timezone),
+                "end_time": (
+                    from_local(data.end_time, settings.timezone)
+                    if data.end_time is not None
+                    else None
+                ),
+            }
+        )
+    )
     notify_created(event.title, event.id)
     return EventResponse.model_validate(event)
 
 
 @router.put("/{event_id}")
 def update_event(event_id: int, data: EventUpdate) -> EventResponse:
-    event = repo.update_event(event_id, data)
+    values = data.model_dump(exclude_unset=True)
+    for field in ("start_time", "end_time"):
+        if field in values and values[field] is not None:
+            values[field] = from_local(values[field], settings.timezone)
+    event = repo.update_event(event_id, EventUpdate(**values))
     if not event:
         raise HTTPException(404, "Event not found")
     notify_updated(event.title, event.id)

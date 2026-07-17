@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from app.agent.tools import (
     notion_create_page_tool,
@@ -70,6 +71,16 @@ class TestNotionSearch:
             assert "项目计划" in result
             assert "任务跟踪" in result
             assert "页面" in result or "database" in result
+
+    def test_network_failure_has_actionable_message(self):
+        import app.notion.client
+
+        with patch(
+            "app.notion.client.requests.post",
+            side_effect=requests.ConnectionError("connection refused"),
+        ):
+            with pytest.raises(ConnectionError, match="无法连接 Notion"):
+                app.notion.client.search_pages("项目")
 
 
 # ── read_page ─────────────────────────────────────────────────────────

@@ -161,22 +161,37 @@ class TestFireReminder:
 
     @freeze_time("2026-06-19 10:00:00")
     def test_recurring_reminder_rescheduled(self, patched_session):
-        """After firing a recurring reminder, the next occurrence should be scheduled."""
-        from app.reminder.scheduler import fire_reminder
+        """Recurring reminders remain pending and fire again at the next occurrence."""
+        from app.reminder.scheduler import _scan_and_schedule, fire_reminder
 
         session, unpatch = patched_session
         repo = ReminderRepository(db=session)
         reminder = repo.create(ReminderCreate(
-            title="每日站会",
+            title="每分钟站会",
             trigger_at=ut.now(),
-            recurring="0 9 * * 1-5",
+            recurring="*/1 * * * *",
         ))
 
-        fire_reminder(reminder.id)
-        unpatch()
+        try:
+            fire_reminder(reminder.id)
+            first_next = repo.get_by_id(reminder.id)
+            assert first_next.status == "pending"
+            assert first_next.trigger_at > ut.now()
 
-        fired = repo.get_by_id(reminder.id)
-        assert fired.status == "fired"
+            # A safety scan before the next occurrence must not duplicate it.
+            with freeze_time("2026-06-19 10:00:30"):
+                _scan_and_schedule()
+
+            with freeze_time("2026-06-19 10:01:01"):
+                _scan_and_schedule()
+                second_next = repo.get_by_id(reminder.id)
+                assert second_next.status == "pending"
+                assert second_next.trigger_at > ut.now()
+
+            notes = NotificationRepository(db=session).get_undelivered()
+            assert len([note for note in notes if note.reminder_id == reminder.id]) == 2
+        finally:
+            unpatch()
 
 
 # ── safety net: _scan_and_schedule ────────────────────────────────────────
@@ -246,6 +261,28 @@ class TestScanAndSchedule:
 class TestScheduleReminderJob:
     """Tests for ``app.reminder.scheduler.schedule_reminder_job()``."""
 
+    def test_recurring_job_uses_configured_timezone(self, patched_session, monkeypatch):
+        from app.reminder import scheduler as scheduler_module
+        from app.reminder.scheduler import start_scheduler, stop_scheduler
+
+        session, unpatch = patched_session
+        reminder = ReminderRepository(db=session).create(
+            ReminderCreate(
+                title="东京每日提醒",
+                trigger_at=ut.now() + timedelta(minutes=1),
+                recurring="0 9 * * *",
+            )
+        )
+        monkeypatch.setattr(scheduler_module.settings, "timezone", "Asia/Tokyo")
+        try:
+            scheduler = start_scheduler()
+            scheduler_module._schedule_recurring(reminder)
+            job = scheduler.get_job(f"reminder-{reminder.id}")
+            assert str(job.trigger.timezone) == "Asia/Tokyo"
+        finally:
+            stop_scheduler()
+            unpatch()
+
     @freeze_time("2026-06-19 10:00:00")
     def test_schedule_job_added(self, patched_session):
         """APScheduler job store should contain the new job after scheduling."""
@@ -300,6 +337,7 @@ class TestScheduleReminderJob:
         """start_scheduler and stop_scheduler should be idempotent."""
         from app.reminder.scheduler import start_scheduler, stop_scheduler
 
+        _, unpatch = patched_session
         try:
             s1 = start_scheduler()
             s2 = start_scheduler()  # should return same instance
@@ -307,3 +345,4 @@ class TestScheduleReminderJob:
         finally:
             stop_scheduler()
             stop_scheduler()  # should not crash
+            unpatch()

@@ -1,6 +1,6 @@
 [project]
 name = "hyperagent"
-version = "0.1.0"
+version = "0.2.1"
 description = "Personal AI assistant with schedule management"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,6 +43,5 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-
 
 

@@ -21,7 +21,7 @@
 |------|------|
 | 🤖 **流式对话** | SSE 逐 token 响应，前端 ReadableStream 消费，体验流畅 |
 | 📅 **日程管理** | 自然语言 CRUD + 中文时间解析 + 日历 UI，双通道同步 |
-| 🧠 **RAG 语义记忆** | OpenRouter Embedding API 向量化 + 余弦相似度检索，API 不可用自动降级 LIKE 搜索 |
+| 🧠 **RAG 语义记忆** | 自动探测聊天供应商 Embedding，失败回退 OpenRouter；向量不可用时自动关键词检索 |
 | 🔔 **定时提醒** | APScheduler + SQLite，到点弹窗原生通知，支持周期性提醒 |
 | 🌐 **联网搜索** | DuckDuckGo → Bing 多后端兜底，selectolax 结构化解析，自动抓取内容摘要 |
 | ☁️ **天气查询** | OpenWeatherMap / wttr.in 降级方案 |
@@ -39,10 +39,10 @@
 
 | 层 | 技术 |
 |----|------|
-| LLM 推理 | DeepSeek V4 Flash（OpenCode Go 套餐） |
-| 视觉理解 | Kimi K2.6（OpenCode） |
-| Agent 框架 | LangGraph create_react_agent（**34 个工具**） |
-| 向量记忆 | OpenRouter qwen/qwen3-embedding-8b（**156 个测试**） |
+| LLM 推理 | GPT-5.6 Terra（OpenAI 兼容供应商可配置） |
+| 视觉理解 | 默认复用聊天模型，可独立配置 |
+| Agent 框架 | LangGraph create_react_agent（**30 个工具**） |
+| 向量记忆 | 自动探测 + OpenRouter qwen/qwen3-embedding-8b 回退（**217 个测试**） |
 | 对话持久化 | LangGraph SqliteSaver |
 | 后端 | FastAPI + uvicorn |
 | 前端 | Vue 3 + TypeScript + Vite |
@@ -59,7 +59,7 @@
 - **对话裁剪** — _trim_if_needed() 防 context window 溢出
 - **Agent 缓存** — ChatOpenAI 实例 + checkpointer 缓存
 - **通知去重** — 原子 `mark_fired` + `threading.Lock` 保护 SSE 客户端，消除重复弹窗
-- **时区统一** — `app/utils/time.py` 提供 `now_utc()`，全部模型统一 UTC 存储
+- **时区统一** — `app/utils/time.py` 提供 `now()` / `ensure_utc()`，全部模型统一 UTC 存储
 - **结构化搜索解析** — selectolax CSS 选择器替代手写正则，mock 测试覆盖
 - **XSS 防护** — DOMPurify 清洗 marked 输出，防止 LLM 注入 HTML/脚本
 
@@ -94,15 +94,15 @@
 
 目标：修复 Phase 1-2 中隐蔽的关键缺陷，确保记忆/提醒/搜索在真实使用中可靠。
 
-> 全代码库审计发现 10 个关键缺陷，修复后测试从 124 → 156。
+> 已完成基础审计与 API 迁移，当前后端回归为 217 项测试。
 
-- [x] **时区统一** — 创建 `app/utils/time.py`，全部模型统一 UTC 存储（消除 off-by-N-hours）
+- [x] **时区统一** — 创建 `app/utils/time.py`；日历 API 本地输入/UTC 存储/本地日期查询与展示统一（消除 off-by-N-hours）
 - [x] **通知去重** — `fire_reminder` 原子 `mark_fired` + `threading.Lock` 保护 `_sse_clients`
 - [x] **内存泄漏修复** — ReminderRepository 6 方法补 rollback，消除 `"cannot commit"` 异常
 - [x] **记忆搜索性能** — 全表扫描 → `LIMIT 200` + `ORDER BY importance DESC LIMIT 5`
 - [x] **Embedding 稳健** — 输入截断（24K chars）+ 余弦相似度维度校验
 - [x] **Web 搜索重构** — selectolax 替代正则，21 个 mock 测试覆盖 DuckDuckGo/Bing
-- [x] **APScheduler 测试** — 11 个测试覆盖通知去重/安全扫描/调度生命周期
+- [x] **APScheduler 测试** — 12 个测试覆盖通知去重、周期提醒重复触发、安全扫描与调度生命周期
 - [x] **XSS 修复** — ChatView + DOMPurify 清洗 marked 输出
 - [x] **前端错误处理** — CalendarView 所有 `catch {}` 改为错误提示；非乐观删除
 - [x] **LocalStorage 防抖** — watch + debounce(500ms)，消除逐 token 卡顿
@@ -120,7 +120,7 @@
 - [x] **后台节流** — `backgroundThrottling: false` 防止窗口最小化时定时器挂起
 - [x] **`recall_facts_tool` 容错** — `search_similar` 加 try/except，防止内部异常传播到 LangGraph 导致 `len(None)` 崩溃
 
-验证：**156 个测试全部通过**，前端 vue-tsc + vite build 成功
+验证：后端 **217 项测试**，前端 `vue-tsc` + `vite build` 成功；便携版产物经 `.env` / 已知 Key 扫描验证。
 
 ### Phase 3 — 深度个性化（2-3 月）
 
@@ -131,8 +131,10 @@
 - [ ] **`MemoryStore` 接口抽象** — 定义 `Protocol`，当前 SQLite 实现适配，为后续换本地向量数据库做准备
 - [ ] **引入 sqlite-vec** — 零外部依赖的 SQLite 向量扩展，替换全表扫描 + Python 余弦暴力计算
 - [ ] **LLM 自动分类与重要性评估** — `remember_fact_tool` 串联分类器，自动判断 category/importance
-- [ ] **记忆自动摘要与合并** — 语义相似度检测（余弦 > 0.85 视为重复），合并文本保留高重要性版本
-- [ ] **遗忘曲线** — `last_recalled_at` + `recall_count` 字段，根据时间衰减动态计算重要性
+- [x] **语义重复合并** — Agent 自动记录时仅对高度相似且向量兼容的记忆合并，保留较高重要性
+- [ ] **LLM 自动摘要合并** — 对确认重复但表述不同的记忆生成可审计摘要，保留完整来源文本
+- [x] **召回统计** — 记录 `last_recalled_at` 与 `recall_count`，在记忆管理页展示使用次数
+- [x] **动态遗忘排序** — 基于召回统计和时间衰减调整提示词注入排序，不改写用户设置的重要性
 - [ ] **实体关系图谱** — 用 LLM 从对话中抽取三元组（`(person, relation, entity)`），SQLite 递归 CTE 查
 
 **Phase 3.2 — 主动能力升级（3-4 周）**
@@ -146,11 +148,22 @@
 
 目标：让 HyperAgent 真正可分发——无需手动编辑 `.env`，首次启动即可用。
 
-- [ ] **配置 API** — `GET/PUT /api/settings` 读写 `.env` 配置项，分类返回（LLM / 集成 / 天气 / 时区等）
-- [ ] **首次启动向导** — 检测无 `.env` → 自动创建含默认值（免费 API 如 wttr.in 天气直接可用）
-- [ ] **配置前端页面** — 设置界面，各配置项分组展示，API Key 输入框、模型选择、时区选择
-- [ ] **一键分发构建** — `build-portable.bat` 输出可直接给他人使用的压缩包
-- [ ] **环境变量校验** — 后端启动时检查关键配置缺失，通过 SSE 推送配置提醒
+- [x] **配置 API** — `GET/PUT /api/settings` + 模型发现/能力测试，非敏感配置写用户数据目录
+- [x] **首次启动配置** — 无有效模型凭据时自动进入设置页
+- [x] **配置前端页面** — 供应商、API Key、聊天/视觉/Embedding 模型与索引状态
+- [x] **对话风格偏好** — 简洁、均衡、详细三档回复风格，保存后下一轮对话即时生效
+- [x] **密钥安全存储** — Windows 凭据管理器，发行包不再携带 `.env`
+- [x] **一键分发构建** — `build-portable.bat` 输出无 `.env` 的可分发目录，并复制包内前端资源
+- [x] **打包凭据隔离** — 打包后端不再向上查找开发 `.env`；旧成品被占用时构建明确失败，避免误交付旧版本
+- [x] **配置缺失保护** — 首次启动自动进入设置；聊天接口在未配置时返回明确的设置引导
+
+#### 配置与数据管理追加完成项
+
+- [x] **供应商迁移** — “我的贾维斯”预设、聊天/视觉模型选择、模型列表发现与能力测试
+- [x] **运行时偏好热更新** — 时区保存前校验；时间解析和周期提醒使用当前设置，无需重启
+- [x] **安全回退** — Embedding 自动探测、OpenRouter 回退、关键词检索与向量重建；单条重建失败不中断批次
+- [x] **用户数据管理** — 记忆 CRUD / JSON 导入导出；对话历史恢复、单线程 JSON 导出
+- [x] **发布审计** — 打包产物不含 `.env` 或已知明文 Key；包内后端与前端入口烟测通过
 
 ### Phase 4 — 感知与行动边界（3-6 月）
 
@@ -161,7 +174,7 @@
 - [ ] 浏览器控制（填表单、查信息、自动化操作）
 - [ ] 语音输入（Whisper STT）
 - [ ] 语音输出（GPT-SoVITS / Fish Speech TTS）
-- [ ] 图像理解（看得懂截图、图片描述）
+- [ ] 截图理解、桌面视觉感知与 Computer Use
 - [ ] 插件/技能系统（第三方可扩展能力）
 - [x] Electron 桌面应用打包（骨架已提前到 Phase 2.1：系统托盘 + 原生通知 + 子进程管理）
 
@@ -182,7 +195,7 @@
 
 1. **渐进增强** — 每个 Phase 的结果都是可用的独立版本，不依赖后续阶段的完成
 2. **数据主权** — 用户数据默认存储在本地，云端能力仅为增强选项
-3. **隐私优先** — 记忆、对话、日程等敏感数据不上传第三方服务
+3. **本地存储优先** — 记忆、对话和日程默认保存在本地；聊天、视觉与 Embedding 可调用用户配置的云端服务，后续支持本地推理和本地向量检索
 4. **模块化** — 每个新能力是一个独立领域包，遵循现有模式（models + repository + tool + test）
 5. **测试保护** — 每个新 domain 都必须有对应的测试覆盖
 6. **REST 优先** — 每个 agent 工具都配套 REST API，前端可直接调用

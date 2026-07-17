@@ -27,7 +27,7 @@ def _headers() -> dict[str, str]:
     """Return headers with current token."""
     if not settings.github_token:
         raise ConnectionError(
-            "GitHub 未配置。请在 .env 中设置 GITHUB_TOKEN（Personal Access Token）。"
+            "GitHub 未配置。请在设置中心填写 GitHub Token（Personal Access Token）。"
         )
     return {
         "Authorization": f"Bearer {settings.github_token}",
@@ -37,34 +37,52 @@ def _headers() -> dict[str, str]:
 
 def _get(path: str, params: dict | None = None) -> dict[str, Any]:
     """Make a GET request to the GitHub API."""
-    resp = requests.get(
-        f"{BASE_URL}{path}",
-        headers=_headers(),
-        params=params or {},
-        timeout=REQUEST_TIMEOUT,
-    )
-    if resp.status_code == 401:
-        raise ConnectionError("GitHub Token 无效或已过期，请在 .env 中更新 GITHUB_TOKEN。")
-    if resp.status_code == 403:
-        raise ConnectionError("GitHub API 速率限制已耗尽，请稍后再试。")
-    resp.raise_for_status()
-    return resp.json()
+    try:
+        resp = requests.get(
+            f"{BASE_URL}{path}",
+            headers=_headers(),
+            params=params or {},
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        logger.warning("GitHub GET request failed: %s", exc)
+        raise ConnectionError("无法连接 GitHub，请检查网络后重试。") from exc
+    return _validate_response(resp).json()
 
 
 def _post(path: str, data: dict) -> dict[str, Any]:
     """Make a POST request to the GitHub API."""
-    resp = requests.post(
-        f"{BASE_URL}{path}",
-        headers=_headers(),
-        json=data,
-        timeout=REQUEST_TIMEOUT,
-    )
+    try:
+        resp = requests.post(
+            f"{BASE_URL}{path}",
+            headers=_headers(),
+            json=data,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        logger.warning("GitHub POST request failed: %s", exc)
+        raise ConnectionError("无法连接 GitHub，请检查网络后重试。") from exc
+    return _validate_response(resp).json()
+
+
+def _validate_response(resp: requests.Response) -> requests.Response:
+    """Map GitHub response failures to messages the agent can act on."""
     if resp.status_code == 401:
-        raise ConnectionError("GitHub Token 无效或已过期，请在 .env 中更新 GITHUB_TOKEN。")
+        raise ConnectionError("GitHub Token 无效或已过期，请在设置中心更新 GitHub Token。")
     if resp.status_code == 403:
-        raise ConnectionError("GitHub API 速率限制已耗尽，请稍后再试。")
-    resp.raise_for_status()
-    return resp.json()
+        if resp.headers.get("X-RateLimit-Remaining") == "0":
+            raise ConnectionError("GitHub API 速率限制已耗尽，请稍后再试。")
+        raise ConnectionError("GitHub 拒绝访问，请检查 Token 权限和仓库访问权限。")
+    if resp.status_code == 404:
+        raise ValueError("未找到 GitHub 仓库、Issue 或 Pull Request，请检查名称和编号。")
+    if resp.status_code == 429:
+        raise ConnectionError("GitHub API 请求过于频繁，请稍后再试。")
+    try:
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("GitHub API returned %s", resp.status_code)
+        raise ConnectionError("GitHub 请求失败，请稍后重试。") from exc
+    return resp
 
 
 def get_notifications() -> str:

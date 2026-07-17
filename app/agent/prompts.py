@@ -7,6 +7,13 @@ from app.memory.context import get_memory_context
 from app.schedule.notifier import drain_notifications
 
 
+_STYLE_INSTRUCTIONS = {
+    "concise": "优先给出结论和必要步骤，除非用户追问，不展开背景说明。",
+    "balanced": "回答清晰、自然，结论后给出必要的理由和可执行建议。",
+    "detailed": "在不重复的前提下给出完整解释、步骤、边界条件和可选方案。",
+}
+
+
 def get_system_prompt(_state=None) -> str:
     """Build the system prompt injected with the current date/time, known
     user memories, and any pending calendar notifications.
@@ -48,6 +55,9 @@ def get_system_prompt(_state=None) -> str:
         "- **不要主动提起**记忆中的事情，尤其不要以此作为开场白\n"
         "- 如果是**新的对话**（对话历史很少或为空），更要注意避免把记忆当作\"上次说到哪了\"延续\n"
     )
+    style_instruction = _STYLE_INSTRUCTIONS.get(
+        settings.assistant_style, _STYLE_INSTRUCTIONS["balanced"]
+    )
 
     return f"""你是 HyperAgent，一个智能的个人 AI 助手。
 
@@ -59,6 +69,7 @@ def get_system_prompt(_state=None) -> str:
 {memory_rule_block if memory_context else ""}
 【核心规则】
 - 使用友好、自然的中文回复
+- 当前对话风格：{style_instruction}
 - 只使用下面列出的工具，不虚构不存在的工具
 - 当用户的问题不需要工具时，直接回答即可，不需要强行使用工具
 - **对话上下文**（用户说了什么、你回了什么）是理解当前问题的关键依据，
@@ -169,7 +180,7 @@ def get_system_prompt(_state=None) -> str:
   • 使用 read_email_tool(message_id, folder="INBOX") 阅读完整内容
   • message_id 来自列表或搜索结果中括号内的数字
 
-▸ **配置要求**：需要用户在 .env 中配置 QQ_EMAIL_ADDRESS 和 QQ_EMAIL_AUTH_CODE
+▸ **配置要求**：需要用户在设置中心配置 QQ 邮箱地址和 QQ 邮箱授权码
   否则工具会提示未配置
 
 【能力八：GitHub】
@@ -198,7 +209,7 @@ def get_system_prompt(_state=None) -> str:
   • 使用 github_list_issues_tool(repo, state="open") 列出
   • 默认显示开放的 issue/PR，可按状态过滤
 
-▸ **配置要求**：需要用户在 .env 中配置 GITHUB_TOKEN（Personal Access Token）
+▸ **配置要求**：需要用户在设置中心配置 GITHUB_TOKEN（Personal Access Token）
 
 【能力九：Notion】
 ▸ **搜索页面** —— 当用户说"搜一下Notion""找笔记""查页面"时：
@@ -223,7 +234,7 @@ def get_system_prompt(_state=None) -> str:
   • 支持按标题文本过滤
   • 显示每条记录的前几个属性
 
-▸ **配置要求**：需要用户在 .env 中配置 NOTION_TOKEN（Notion Integration Token）
+▸ **配置要求**：需要用户在设置中心配置 NOTION_TOKEN（Notion Integration Token）
   并在 Notion 中将页面/数据库共享给该集成
 
 【能力十：自由对话】
@@ -239,7 +250,7 @@ def get_system_prompt(_state=None) -> str:
     会自动创建关联提醒。
   • 除非用户明确说"只要提醒不要记在日程上"，否则不要用 create_reminder_tool。
   • 示例：用户说"5分钟后提醒我喝水" → create_event_tool(title="喝水", start_time="5分钟后", remind=True)
-  • 示例：用户说"每天上午9点提醒我站会" → create_event_tool(title="站会", start_time="明天上午9点", remind=True, recurring="0 9 * * *")
+  • 示例：用户说"每天上午9点提醒我站会" → create_reminder_tool(title="站会", trigger_time="每天上午9点", recurring="0 9 * * *")
   • 创建后告知用户：已创建日程并设置了到时提醒
 
 ▸ **查看提醒** → 当用户问"有什么提醒""查看我的提醒"时：

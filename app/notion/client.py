@@ -24,7 +24,7 @@ def _headers() -> dict[str, str]:
     """Return headers with current token."""
     if not settings.notion_token:
         raise ConnectionError(
-            "Notion 未配置。请在 .env 中设置 NOTION_TOKEN（Notion Integration Token）。"
+            "Notion 未配置。请在设置中心填写 Notion Integration Token。"
         )
     return {
         "Authorization": f"Bearer {settings.notion_token}",
@@ -35,51 +35,69 @@ def _headers() -> dict[str, str]:
 
 def _get(path: str, params: dict | None = None) -> dict[str, Any]:
     """Make a GET request to the Notion API."""
-    resp = requests.get(
-        f"{BASE_URL}{path}",
-        headers=_headers(),
-        params=params or {},
-        timeout=REQUEST_TIMEOUT,
-    )
+    try:
+        resp = requests.get(
+            f"{BASE_URL}{path}",
+            headers=_headers(),
+            params=params or {},
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise _network_error(exc) from exc
     _check_response(resp)
     return resp.json()
 
 
 def _post(path: str, data: dict) -> dict[str, Any]:
     """Make a POST request to the Notion API."""
-    resp = requests.post(
-        f"{BASE_URL}{path}",
-        headers=_headers(),
-        json=data,
-        timeout=REQUEST_TIMEOUT,
-    )
+    try:
+        resp = requests.post(
+            f"{BASE_URL}{path}",
+            headers=_headers(),
+            json=data,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise _network_error(exc) from exc
     _check_response(resp)
     return resp.json()
 
 
 def _patch(path: str, data: dict) -> dict[str, Any]:
     """Make a PATCH request to the Notion API."""
-    resp = requests.patch(
-        f"{BASE_URL}{path}",
-        headers=_headers(),
-        json=data,
-        timeout=REQUEST_TIMEOUT,
-    )
+    try:
+        resp = requests.patch(
+            f"{BASE_URL}{path}",
+            headers=_headers(),
+            json=data,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise _network_error(exc) from exc
     _check_response(resp)
     return resp.json()
+
+
+def _network_error(exc: requests.RequestException) -> ConnectionError:
+    logger.warning("Notion request failed: %s", exc)
+    return ConnectionError("无法连接 Notion，请检查网络后重试。")
 
 
 def _check_response(resp: requests.Response) -> None:
     """Check Notion API response for errors."""
     if resp.status_code == 401:
-        raise ConnectionError("Notion Token 无效或已过期，请在 .env 中更新 NOTION_TOKEN。")
+        raise ConnectionError("Notion Token 无效或已过期，请在设置中心更新 Notion Token。")
     if resp.status_code == 403:
         raise ConnectionError("Notion 集成没有权限访问该页面。请在 Notion 中共享页面给集成。")
     if resp.status_code == 404:
         raise ValueError("未找到指定的 Notion 页面或数据库。请检查 ID 是否正确。")
     if resp.status_code == 429:
         raise ConnectionError("Notion API 速率限制已耗尽，请稍后再试。")
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("Notion API returned %s", resp.status_code)
+        raise ConnectionError("Notion 请求失败，请稍后重试。") from exc
 
 
 def _extract_page_title(page: dict) -> str:

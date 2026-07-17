@@ -11,7 +11,7 @@ from langchain_core.tools import tool
 
 from app.config import settings
 from app.memory.models import MemoryCreate
-from app.memory.repository import MemoryRepository
+from app.memory.store import MemoryStore, get_memory_store
 from app.schedule.models import EventCreate, EventUpdate
 from app.schedule.repository import ScheduleRepository
 from app.web_search.searcher import search_web
@@ -21,8 +21,12 @@ from app.calculator.calc import calculate
 logger = logging.getLogger(__name__)
 
 repo = ScheduleRepository()
-memory_repo = MemoryRepository()
-tz = pytz.timezone(settings.timezone)
+memory_repo: MemoryStore = get_memory_store()
+
+
+def _timezone():
+    """Resolve the configured timezone at call time for hot settings updates."""
+    return pytz.timezone(settings.timezone)
 
 
 def _preprocess_chinese_time(text: str) -> str:
@@ -50,6 +54,7 @@ def _preprocess_chinese_time(text: str) -> str:
     text = text.replace('昨早', '昨天早上')
 
     # 处理 后天/大后天 — dateparser 不认识，替换为绝对日期
+    tz = _timezone()
     if '大后天' in text:
         target = (datetime.now(tz) + timedelta(days=3)).strftime('%Y-%m-%d')
         text = re.sub(r'大后天\s*', f'{target} ', text)
@@ -72,7 +77,7 @@ def _parse_time(text: str) -> datetime | None:
 
 
 def _now() -> datetime:
-    return datetime.now(tz)
+    return datetime.now(_timezone())
 
 
 # ── Tools ────────────────────────────────────────────────────────────
@@ -144,7 +149,7 @@ def create_event_tool(
     # Ensure parsed_start is timezone-aware for comparison
     reminder_trigger = parsed_start
     if reminder_trigger.tzinfo is None:
-        reminder_trigger = reminder_trigger.replace(tzinfo=tz)
+        reminder_trigger = reminder_trigger.replace(tzinfo=_timezone())
     if remind and reminder_trigger > now:
         try:
             from app.reminder.models import ReminderCreate
@@ -374,11 +379,12 @@ def remember_fact_tool(
     Returns:
         记忆存储确认
     """
-    entry = memory_repo.create_memory(
+    write_result = memory_repo.remember_memory(
         MemoryCreate(
             content=content, category=category, importance=importance, source="chat"
         )
     )
+    entry = write_result.entry
     cat_labels = {
         "personal_info": "个人信息",
         "preference": "偏好",
@@ -388,7 +394,9 @@ def remember_fact_tool(
     }
     label = cat_labels.get(category, category)
     badge = "⭐" if importance >= 0.8 else "🧠"
-    return f"{badge} 已记住（{label}）：「{entry.content[:80]}」"
+    if write_result.created:
+        return f"{badge} 已记住（{label}）：「{entry.content[:80]}」"
+    return f"{badge} 已更新已有记忆（ID: {entry.id}）：「{entry.content[:80]}」"
 
 
 @tool
@@ -415,6 +423,11 @@ def recall_facts_tool(query: str, category: str | None = None) -> str:
     if not results:
         return f"🔍 没有找到与「{query}」相关的记忆。"
 
+    try:
+        memory_repo.mark_recalled([memory.id for memory in results])
+    except Exception as exc:
+        logger.warning("Unable to record recalled memories: %s", exc)
+
     cat_labels = {
         "personal_info": "个人信息",
         "preference": "偏好",
@@ -426,7 +439,7 @@ def recall_facts_tool(query: str, category: str | None = None) -> str:
     for i, m in enumerate(results, 1):
         label = cat_labels.get(m.category, m.category)
         star = " ⭐" if m.importance >= 0.8 else ""
-        lines.append(f"  {i}. [{label}{star}] {m.content[:100]}")
+        lines.append(f"  {i}. [ID: {m.id}] [{label}{star}] {m.content[:100]}")
     return "\n".join(lines)
 
 
@@ -567,7 +580,8 @@ def timezone_tool(target_timezone: str, time_str: str = "") -> str:
     except (pytz.UnknownTimeZoneError, Exception):
         return f"❌ 无法识别的时区：{target_timezone}。请使用 IANA 时区名称，如 'Europe/London'。"
 
-    now_local = datetime.now(tz)
+    local_tz = _timezone()
+    now_local = datetime.now(local_tz)
 
     if time_str:
         # Parse the source time as local time
@@ -576,9 +590,9 @@ def timezone_tool(target_timezone: str, time_str: str = "") -> str:
             return f"❌ 无法解析时间：{time_str}"
         # Interpret the parsed naive time as local time
         if parsed.tzinfo is not None:
-            local_dt = parsed.astimezone(tz)
+            local_dt = parsed.astimezone(local_tz)
         else:
-            local_dt = tz.localize(parsed)
+            local_dt = local_tz.localize(parsed)
         target_dt = local_dt.astimezone(target_tz)
         offset_hours = (target_dt.utcoffset().total_seconds() - local_dt.utcoffset().total_seconds()) // 3600
         diff_str = f"（{'早' if offset_hours < 0 else '晚'}{abs(int(offset_hours))} 小时）"

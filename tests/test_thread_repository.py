@@ -1,5 +1,7 @@
 """Tests for ThreadRepository CRUD."""
 
+import sqlite3
+
 from app.thread.models import Thread, ThreadCreate
 from app.thread.repository import ThreadRepository
 
@@ -46,6 +48,20 @@ class TestThreadRepository:
         repo = ThreadRepository(db=session)
         assert repo.update_title("nonexistent", "新标题") is None
 
+    def test_thread_updates_use_unified_utc_clock(self, session):
+        onupdate = Thread.__table__.c.updated_at.onupdate
+        assert onupdate is not None
+        assert onupdate.arg.__module__ == "app.utils.time"
+        assert onupdate.arg.__name__ == "now"
+        repo = ThreadRepository(db=session)
+        _make_thread(repo, "thread-utc")
+
+        updated = repo.update_title("thread-utc", "已更新")
+        repo.touch("thread-utc")
+
+        assert updated is not None
+        assert repo.get_by_id("thread-utc").message_count == 1
+
     def test_delete(self, session):
         repo = ThreadRepository(db=session)
         _make_thread(repo, "thread-del")
@@ -55,3 +71,22 @@ class TestThreadRepository:
     def test_delete_nonexistent(self, session):
         repo = ThreadRepository(db=session)
         assert repo.delete("nonexistent") is False
+
+    def test_checkpoint_cleanup_handles_minimal_langgraph_schema(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "checkpoints.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE checkpoints (thread_id TEXT, checkpoint TEXT)")
+        conn.execute("INSERT INTO checkpoints VALUES ('hyperagent-delete', 'one')")
+        conn.execute("INSERT INTO checkpoints VALUES ('hyperagent-keep', 'two')")
+        conn.commit()
+        conn.close()
+
+        import app.thread.repository as repository_module
+
+        monkeypatch.setattr(repository_module.settings, "data_dir", tmp_path)
+        ThreadRepository._delete_checkpoints("hyperagent-delete")
+
+        conn = sqlite3.connect(db_path)
+        remaining = conn.execute("SELECT thread_id FROM checkpoints").fetchall()
+        conn.close()
+        assert remaining == [("hyperagent-keep",)]

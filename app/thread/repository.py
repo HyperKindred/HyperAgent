@@ -5,7 +5,6 @@ Follows the existing dual-Session pattern (MemoryRepository / ScheduleRepository
 
 import logging
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -75,7 +74,6 @@ class ThreadRepository:
             thread = db.query(Thread).filter(Thread.id == thread_id).first()
             if thread:
                 thread.title = title
-                thread.updated_at = datetime.utcnow()
                 db.commit()
                 db.refresh(thread)
             return thread
@@ -89,7 +87,6 @@ class ThreadRepository:
         try:
             thread = db.query(Thread).filter(Thread.id == thread_id).first()
             if thread:
-                thread.updated_at = datetime.utcnow()
                 thread.message_count = (thread.message_count or 0) + 1
                 db.commit()
         finally:
@@ -137,13 +134,30 @@ class ThreadRepository:
         db_path: Path = settings.data_dir / "checkpoints.db"
         if not db_path.exists():
             return
+        conn: sqlite3.Connection | None = None
         try:
             conn = sqlite3.connect(str(db_path))
-            conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
-            conn.execute("DELETE FROM checkpoint_writes WHERE thread_id = ?", (thread_id,))
-            conn.execute("DELETE FROM checkpoint_blobs WHERE thread_id = ?", (thread_id,))
+            existing_tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            # LangGraph schema varies by version. Only delete tables and columns
+            # that are actually present so one absent optional table cannot roll
+            # back deletion from the primary checkpoints table.
+            for table in ("checkpoints", "checkpoint_writes", "checkpoint_blobs"):
+                if table not in existing_tables:
+                    continue
+                columns = {
+                    row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+                }
+                if "thread_id" in columns:
+                    conn.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
             conn.commit()
-            conn.close()
             logger.info("Checkpoints cleaned for thread: %s", thread_id)
         except Exception as e:
             logger.warning("Failed to clean checkpoints for %s: %s", thread_id, e)
+        finally:
+            if conn is not None:
+                conn.close()

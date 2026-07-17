@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import smtplib
 
 from app.agent.tools import (
     list_emails_tool,
@@ -50,6 +51,15 @@ class TestSendEmailTool:
         })
         assert "已发送" in result
         mock_conn.send_message.assert_called_once()
+
+    @patch("app.email.client.smtplib.SMTP_SSL")
+    def test_smtp_auth_failure_has_actionable_message(self, mock_smtp):
+        from app.email.client import _get_smtp
+
+        mock_smtp.side_effect = smtplib.SMTPAuthenticationError(535, b"auth failed")
+
+        with pytest.raises(ConnectionError, match="无法连接或登录 QQ 邮箱"):
+            _get_smtp()
 
     @patch("app.email.client.smtplib.SMTP_SSL")
     def test_send_chinese(self, mock_smtp):

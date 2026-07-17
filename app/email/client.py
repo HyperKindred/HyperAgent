@@ -42,8 +42,7 @@ def _check_config() -> None:
     """Raise ConnectionError if QQ email is not configured."""
     if not settings.qq_email_address or not settings.qq_email_auth_code:
         raise ConnectionError(
-            "QQ邮箱未配置。请在 .env 中设置 QQ_EMAIL_ADDRESS（邮箱地址）"
-            "和 QQ_EMAIL_AUTH_CODE（授权码）。\n"
+            "QQ邮箱未配置。请在设置中心填写邮箱地址和 QQ 邮箱授权码。\n"
             "授权码获取：QQ邮箱 → 设置 → 账户 → POP3/IMAP/SMTP服务 → 生成授权码"
         )
 
@@ -51,17 +50,29 @@ def _check_config() -> None:
 def _get_imap() -> imaplib.IMAP4_SSL:
     """Open an authenticated IMAP connection to QQ."""
     _check_config()
-    conn = imaplib.IMAP4_SSL("imap.qq.com", 993, timeout=_IMAP_TIMEOUT)
-    conn.login(settings.qq_email_address, settings.qq_email_auth_code)
-    return conn
+    try:
+        conn = imaplib.IMAP4_SSL("imap.qq.com", 993, timeout=_IMAP_TIMEOUT)
+        conn.login(settings.qq_email_address, settings.qq_email_auth_code)
+        return conn
+    except (OSError, imaplib.IMAP4.error) as exc:
+        logger.warning("QQ IMAP connection failed: %s", exc)
+        raise ConnectionError(
+            "无法连接或登录 QQ 邮箱，请检查网络、邮箱地址和授权码。"
+        ) from exc
 
 
 def _get_smtp() -> smtplib.SMTP_SSL:
     """Open an authenticated SMTP connection to QQ."""
     _check_config()
-    conn = smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=_SMTP_TIMEOUT)
-    conn.login(settings.qq_email_address, settings.qq_email_auth_code)
-    return conn
+    try:
+        conn = smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=_SMTP_TIMEOUT)
+        conn.login(settings.qq_email_address, settings.qq_email_auth_code)
+        return conn
+    except (OSError, smtplib.SMTPException) as exc:
+        logger.warning("QQ SMTP connection failed: %s", exc)
+        raise ConnectionError(
+            "无法连接或登录 QQ 邮箱，请检查网络、邮箱地址和授权码。"
+        ) from exc
 
 
 def _decode_email_header(header_value: str | None) -> str:

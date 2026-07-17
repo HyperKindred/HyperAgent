@@ -6,16 +6,6 @@ HyperAgent 后端启动入口（PyInstaller 专用）
 import os
 import sys
 
-# ── Debug: write a startup marker so we know which build is running ──
-_DBG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_startup_marker.log")
-try:
-    with open(_DBG_PATH, "w") as f:
-        f.write(f"started at {__import__('datetime').datetime.now()}\n")
-        f.write(f"exe: {sys.executable}\n")
-        f.write(f"HYPERAGENT_DATA_DIR={os.environ.get('HYPERAGENT_DATA_DIR', '(not set)')}\n")
-except Exception:
-    pass
-
 # ── 切换到 exe 所在目录 ────────────────────────────────────
 if getattr(sys, "frozen", False):
     exe_dir = os.path.dirname(sys.executable)
@@ -23,17 +13,22 @@ else:
     exe_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(exe_dir)
 
-# ── 从当前目录向上找 .env（支持放到 HyperAgent.exe 同级） ─
-_env_found = False
-_search_dir = exe_dir
-for _ in range(5):  # 向上最多走 5 层
-    if os.path.isfile(os.path.join(_search_dir, ".env")):
-        os.chdir(_search_dir)
-        _env_found = True
-        break
-    _search_dir = os.path.dirname(_search_dir)
-if not _env_found:
-    print("[backend] WARNING: .env not found — API keys may be missing")
+# Development keeps legacy ``.env`` compatibility. A packaged backend must
+# never walk out of its resource directory: a build located under a source
+# checkout could otherwise inherit the developer's credentials.
+if not getattr(sys, "frozen", False):
+    _env_found = False
+    _search_dir = exe_dir
+    for _ in range(5):
+        if os.path.isfile(os.path.join(_search_dir, ".env")):
+            os.chdir(_search_dir)
+            _env_found = True
+            break
+        _search_dir = os.path.dirname(_search_dir)
+    if not _env_found:
+        print("[backend] WARNING: .env not found — configure models in Settings")
+else:
+    print("[backend] Packaged mode: using the in-app settings store")
 
 # ── 确保能找到项目模块 ──────────────────────────────────────
 if getattr(sys, "frozen", False):

@@ -4,7 +4,7 @@ All timestamps stored in the database MUST be naive UTC.
 This module is the single source of truth for time operations.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import DateTime, func
 
@@ -49,6 +49,32 @@ def to_local(dt: datetime, tz_name: str = "Asia/Shanghai") -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(pytz.timezone(tz_name))
+
+
+def from_local(dt: datetime, tz_name: str = "Asia/Shanghai") -> datetime:
+    """Interpret a datetime from the configured local timezone as naive UTC.
+
+    A timezone-aware value is already unambiguous and is converted directly.
+    Naive values are used by the browser's ``datetime-local`` inputs and are
+    therefore interpreted in the application timezone rather than the host
+    machine timezone.
+    """
+    if dt.tzinfo is not None:
+        return ensure_utc(dt)  # type: ignore[return-value]
+    import pytz
+
+    localized = pytz.timezone(tz_name).localize(dt, is_dst=None)
+    return ensure_utc(localized)  # type: ignore[return-value]
+
+
+def local_date_bounds(day: date, tz_name: str = "Asia/Shanghai") -> tuple[datetime, datetime]:
+    """Return naive-UTC bounds for one local calendar day, end-exclusive."""
+    start_local = datetime.combine(day, time.min)
+    next_local = start_local + timedelta(days=1)
+    return (
+        from_local(start_local, tz_name),
+        from_local(next_local, tz_name),
+    )
 
 
 def utc_now_sql():

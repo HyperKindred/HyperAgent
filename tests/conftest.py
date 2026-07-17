@@ -45,6 +45,8 @@ def sample_event(repo):
 
 
 @pytest.fixture
-def memory_repo(session):
+def memory_repo(session, monkeypatch):
     """MemoryRepository backed by in-memory SQLite."""
+    # Repository tests must never call a real paid embedding endpoint.
+    monkeypatch.setattr("app.memory.repository.get_embedding_result", lambda _text: None)
     return MemoryRepository(session=session)

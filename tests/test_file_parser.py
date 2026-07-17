@@ -51,6 +51,25 @@ class TestParseDocx:
         result = parse_file(b"not a docx", "file.docx")
         assert isinstance(result, str)
 
+    def test_extracts_table_cells(self):
+        from docx import Document
+
+        document = Document()
+        document.add_paragraph("项目进度")
+        table = document.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "任务"
+        table.cell(0, 1).text = "状态"
+        table.cell(1, 0).text = "模型迁移"
+        table.cell(1, 1).text = "完成"
+        buffer = io.BytesIO()
+        document.save(buffer)
+
+        result = parse_file(buffer.getvalue(), "进度.docx")
+
+        assert "项目进度" in result
+        assert "任务 | 状态" in result
+        assert "模型迁移 | 完成" in result
+
 
 class TestTruncation:
     def test_truncates_long_text(self):

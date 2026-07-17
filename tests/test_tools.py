@@ -123,6 +123,7 @@ class TestRecallFactsTool:
         result = recall_facts_tool.invoke({"query": "喜欢"})
         assert "找到" in result
         assert "美式咖啡" in result
+        assert "[ID:" in result
 
     def test_recall_no_results(self):
         result = recall_facts_tool.invoke({"query": "zzzznonexistent"})
@@ -162,16 +163,23 @@ class TestForgetFactTool:
 
 
 class TestWeatherQueryTool:
-    def test_weather_with_fallback(self):
-        """Should return weather data (uses wttr.in fallback, no API key needed)."""
+    def test_weather_with_fallback(self, monkeypatch):
+        """The agent tool delegates to the weather client without real network I/O."""
+        monkeypatch.setattr(
+            "app.agent.tools.get_weather",
+            lambda city: f"{city} 当前天气：20°C",
+        )
         result = weather_query_tool.invoke({"city": "Beijing"})
-        assert "Beijing" in result or "北京" in result
+        assert "Beijing" in result
         assert "°C" in result
 
-    def test_weather_tokyo(self):
-        """Should work with different cities (wttr.in fallback)."""
+    def test_weather_tokyo(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.agent.tools.get_weather",
+            lambda city: f"{city} 当前天气：21°C",
+        )
         result = weather_query_tool.invoke({"city": "Tokyo"})
-        assert "Tokyo" in result or "东京" in result
+        assert "Tokyo" in result
         assert "°C" in result
 
 
@@ -206,6 +214,12 @@ class TestCalculateTool:
 
 
 class TestTimezoneTool:
+    def test_uses_runtime_configured_timezone(self, monkeypatch):
+        import app.agent.tools as tools_module
+
+        monkeypatch.setattr(tools_module.settings, "timezone", "Asia/Tokyo")
+        assert tools_module._now().tzinfo.zone == "Asia/Tokyo"
+
     def test_london_current_time(self):
         result = timezone_tool.invoke({"target_timezone": "Europe/London"})
         assert "🕐" in result

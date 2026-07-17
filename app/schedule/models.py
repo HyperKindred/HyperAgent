@@ -1,10 +1,11 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from app.schedule.database import Base
-from app.utils.time import utc_now_sql
+from app.config import settings
+from app.utils.time import to_local, utc_now_sql
 
 
 # ── SQLAlchemy ORM Model ──────────────────────────────────────────────
@@ -63,3 +64,8 @@ class EventResponse(BaseModel):
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("start_time", "end_time", when_used="unless-none")
+    def serialize_local_datetime(self, dt: datetime) -> str:
+        """Calendar UI receives wall-clock values in the configured timezone."""
+        return to_local(dt, settings.timezone).replace(tzinfo=None).isoformat()

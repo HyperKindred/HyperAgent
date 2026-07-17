@@ -129,6 +129,34 @@ class ReminderRepository:
             if self._db is None:
                 db.close()
 
+    def reschedule_recurring(
+        self, reminder_id: int, next_trigger_at: datetime
+    ) -> Optional[Reminder]:
+        """Move a recurring reminder to its next pending occurrence.
+
+        A reminder is first marked fired atomically before a notification is
+        queued.  Recurring reminders are then returned to ``pending`` with a
+        future UTC trigger time, while cancelled reminders are never revived.
+        """
+        db = self._session()
+        try:
+            reminder = db.query(Reminder).filter(
+                Reminder.id == reminder_id,
+                Reminder.status != "cancelled",
+            ).first()
+            if reminder:
+                reminder.status = "pending"
+                reminder.trigger_at = next_trigger_at
+                db.commit()
+                db.refresh(reminder)
+            return reminder
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            if self._db is None:
+                db.close()
+
     def cancel(self, reminder_id: int) -> bool:
         db = self._session()
         try:

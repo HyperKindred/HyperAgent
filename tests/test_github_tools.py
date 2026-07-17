@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from app.agent.tools import (
     github_create_issue_tool,
@@ -66,6 +67,16 @@ class TestGitHubNotifications:
         import app.github.client
         with pytest.raises(ConnectionError):
             app.github.client.get_notifications()
+
+    def test_network_failure_has_actionable_message(self):
+        import app.github.client
+
+        with patch(
+            "app.github.client.requests.get",
+            side_effect=requests.ConnectionError("connection refused"),
+        ):
+            with pytest.raises(ConnectionError, match="无法连接 GitHub"):
+                app.github.client.get_notifications()
 
 
 # ── search_issues ──────────────────────────────────────────────────────

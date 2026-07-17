@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -8,45 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import chat, reminder as reminder_api, schedule
-from app.api import thread as thread_api
-from app.schedule.database import init_db
-
-import os
-import sys
-from pathlib import Path
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from starlette.types import ASGIApp, Scope, Receive, Send
-
-from app.api import chat, reminder as reminder_api, schedule
+from app.api import chat, memory as memory_api, reminder as reminder_api, schedule
+from app.api import settings as settings_api
 from app.api import thread as thread_api
 from app.schedule.database import init_db
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-
-
-# ── Diagnostic ASGI middleware: catches any exception at the ASGI level ──
-class _CatchAllMiddleware:
-    """Log ALL unhandled exceptions to a debug file before they crash."""
-    def __init__(self, app: ASGIApp):
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        try:
-            await self.app(scope, receive, send)
-        except BaseException as exc:
-            import traceback
-            tb = traceback.format_exc()
-            log_dir = os.environ.get("APPDATA", os.getcwd())
-            log_path = os.path.join(log_dir, "HyperAgent", "_asgi_crash.log")
-            os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            with open(log_path, "w") as f:
-                f.write(f"ASGI caught: {type(exc).__name__}: {exc}\n{tb}\n")
-            raise  # re-raise so the server still handles it
+APP_VERSION = "0.2.1"
 
 
 def _find_frontend_dist() -> Path | None:
@@ -82,19 +51,24 @@ async def lifespan(app: FastAPI):
     """Initialize database and start scheduler on startup."""
     init_db()
     from app.reminder.scheduler import start_scheduler, stop_scheduler
-    scheduler = start_scheduler()
-    yield
-    stop_scheduler()
+    from app.agent.graph import close_checkpointer
+
+    start_scheduler()
+    try:
+        yield
+    finally:
+        stop_scheduler()
+        close_checkpointer()
 
 
 app = FastAPI(
     title="HyperAgent API",
     description="Personal AI assistant backend",
-    version="0.1.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 
-# Allow Vue dev server (localhost:5173) to call the API
+# Allow the Vite development server to call the API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -108,14 +82,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Wrap the ASGI app in our catch-all ──────────────────────────────
-app.add_middleware(_CatchAllMiddleware)
-
 # ── API routers ──────────────────────────────────────────────────────
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(schedule.router, prefix="/api", tags=["schedule"])
 app.include_router(reminder_api.router, prefix="/api", tags=["reminder"])
 app.include_router(thread_api.router, prefix="/api", tags=["thread"])
+app.include_router(settings_api.router, prefix="/api")
+app.include_router(memory_api.router, prefix="/api")
 
 
 # ── Health check ──────────────────────────────────────────────────────
@@ -124,7 +97,7 @@ app.include_router(thread_api.router, prefix="/api", tags=["thread"])
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint for Electron and monitoring."""
-    return JSONResponse({"status": "ok", "version": "0.1.0", "build": "20260619-2036"})
+    return JSONResponse({"status": "ok", "version": APP_VERSION})
 
 
 @app.get("/api/health/debug")
