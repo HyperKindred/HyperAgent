@@ -57,7 +57,7 @@ function spawnBackend() {
   } else {
     // ── Development mode: uv run uvicorn ──
     cmd = 'uv'
-    args = ['run', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', String(PORT)]
+    args = ['run', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(PORT)]
     cwd = REPO_ROOT
     console.log(`[electron] Starting backend via: ${cmd} ${args.join(' ')}`)
   }

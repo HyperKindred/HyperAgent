@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,11 +19,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import settings
 from app.reminder.models import Reminder
 from app.reminder.repository import ReminderRepository, NotificationRepository
-from app.utils.time import now as utc_now
+from app.utils.time import ensure_utc, now as utc_now
 
 logger = logging.getLogger(__name__)
-
-tz = pytz.timezone(settings.timezone)
 
 # Singleton
 scheduler: BackgroundScheduler | None = None
@@ -54,9 +52,13 @@ def fire_reminder(reminder_id: int) -> None:
     # Enqueue a notification for SSE delivery
     notification = notif_repo.enqueue(reminder)
 
-    # If recurring, schedule the next occurrence
+    # A recurring reminder must become pending again after its delivery.
+    # Persist the next time first so the safety scan and an application restart
+    # agree on the same future occurrence.
     if reminder.recurring:
-        _schedule_recurring(reminder)
+        next_trigger = _schedule_recurring(reminder)
+        if next_trigger is not None:
+            reminder_repo.reschedule_recurring(reminder.id, next_trigger)
 
     logger.info("Notification %s enqueued for reminder '%s'", notification.id, reminder.title)
 
@@ -90,28 +92,55 @@ def _push_notification_to_sse(notification) -> None:
         logger.warning("Failed to push notification to SSE: %s", e)
 
 
-def _schedule_recurring(reminder: Reminder) -> None:
-    """Schedule the next occurrence of a recurring reminder."""
+def _recurring_cron_trigger(reminder: Reminder) -> CronTrigger:
+    """Build the application's timezone-aware trigger for a recurring reminder."""
+    return CronTrigger.from_crontab(
+        reminder.recurring,
+        timezone=pytz.timezone(settings.timezone),
+    )
+
+
+def _schedule_recurring(reminder: Reminder) -> datetime | None:
+    """Schedule a recurring reminder and return its next naive-UTC occurrence."""
     global scheduler
-    if scheduler is None:
-        return
     try:
-        scheduler.add_job(
-            fire_reminder,
-            CronTrigger.from_crontab(reminder.recurring),
-            args=[reminder.id],
-            id=f"reminder-{reminder.id}",
-            replace_existing=True,
-            misfire_grace_time=60,
-        )
-        logger.info("Recurring reminder %s scheduled with cron: %s", reminder.id, reminder.recurring)
+        trigger = _recurring_cron_trigger(reminder)
+        # The callback may run exactly on a cron boundary. Advance a second so
+        # a just-delivered occurrence is never persisted as the next one.
+        reference_time = datetime.now(trigger.timezone) + timedelta(seconds=1)
+        next_run = trigger.get_next_fire_time(None, reference_time)
+        next_trigger = ensure_utc(next_run)
+        if next_trigger is None:
+            logger.error("Recurring reminder %s has no future occurrence", reminder.id)
+            return None
+        if scheduler is not None:
+            scheduler.add_job(
+                fire_reminder,
+                trigger,
+                args=[reminder.id],
+                id=f"reminder-{reminder.id}",
+                replace_existing=True,
+                misfire_grace_time=60,
+            )
+            logger.info(
+                "Recurring reminder %s scheduled with cron: %s",
+                reminder.id,
+                reminder.recurring,
+            )
+        return next_trigger
     except Exception as e:
         logger.error("Failed to schedule recurring reminder %s: %s", reminder.id, e)
+        return None
 
 
 def schedule_reminder_job(reminder: Reminder) -> None:
     """Schedule a single reminder job in APScheduler."""
     global scheduler
+    if reminder.recurring:
+        next_trigger = _schedule_recurring(reminder)
+        if next_trigger is not None:
+            ReminderRepository().reschedule_recurring(reminder.id, next_trigger)
+        return
     if scheduler is None:
         logger.warning("Scheduler not initialized")
         return
@@ -185,13 +214,13 @@ def start_scheduler() -> BackgroundScheduler:
     # Load pending reminders from DB and schedule them
     repo = ReminderRepository()
     pending = repo.list_pending()
-    now = utc_now()  # naive UTC
     for r in pending:
-        if r.trigger_at > now:
+        if r.recurring:
+            next_trigger = _schedule_recurring(r)
+            if next_trigger is not None:
+                repo.reschedule_recurring(r.id, next_trigger)
+        elif r.trigger_at > utc_now():
             schedule_reminder_job(r)
-        elif r.recurring:
-            # Past due recurring — schedule anyway (next occurrence logic)
-            _schedule_recurring(r)
 
     scheduler.start()
     logger.info("APScheduler started with %d pending reminders", len(pending))

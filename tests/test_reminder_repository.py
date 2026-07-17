@@ -93,6 +93,38 @@ class TestMarkFired:
         assert result is None
 
 
+class TestRescheduleRecurring:
+    def test_reschedule_recurring_returns_reminder_to_pending(self, session):
+        repo = ReminderRepository(db=session)
+        reminder = repo.create(ReminderCreate(
+            title="每日站会",
+            trigger_at=datetime.utcnow(),
+            recurring="0 9 * * *",
+        ))
+        repo.mark_fired(reminder.id)
+        next_time = datetime.utcnow() + timedelta(days=1)
+
+        rescheduled = repo.reschedule_recurring(reminder.id, next_time)
+
+        assert rescheduled is not None
+        assert rescheduled.status == "pending"
+        assert rescheduled.trigger_at == next_time
+
+    def test_reschedule_recurring_does_not_revive_cancelled_reminder(self, session):
+        repo = ReminderRepository(db=session)
+        reminder = repo.create(ReminderCreate(
+            title="已取消的周期提醒",
+            trigger_at=datetime.utcnow() + timedelta(hours=1),
+            recurring="0 9 * * *",
+        ))
+        assert repo.cancel(reminder.id) is True
+
+        assert repo.reschedule_recurring(
+            reminder.id, datetime.utcnow() + timedelta(days=1)
+        ) is None
+        assert repo.get_by_id(reminder.id).status == "cancelled"
+
+
 class TestCancelReminder:
     def test_cancel(self, session):
         repo = ReminderRepository(db=session)

@@ -4,16 +4,15 @@ Parallels ``app.schedule.notifier.drain_notifications()`` — retrieves the
 most semantically relevant memories and formats them for the system prompt.
 
 Because the system prompt is built *before* seeing the user's message, we
-inject a mix of:
-1. High-importance memories (importance >= 0.8)
-2. Most recent N memories
+inject a small set ranked by user importance, bounded freshness, and actual
+recall history.
 
 The deep semantic search happens inside ``recall_facts_tool`` at query time.
 """
 
 import time
 
-from app.memory.repository import MemoryRepository
+from app.memory.store import get_memory_store
 
 _CATEGORY_LABELS: dict[str, str] = {
     "personal_info": "个人信息",
@@ -29,6 +28,11 @@ _MAX_CONTEXT_MEMORIES = 5  # keep system-prompt token count reasonable
 _cache: dict = {}
 _CACHE_TTL = 30  # seconds
 
+
+def invalidate_memory_context() -> None:
+    """Clear the prompt cache after a memory write or delete."""
+    _cache.clear()
+
 def get_memory_context() -> str | None:
     """Build a formatted block of important + recent memories.
 
@@ -42,7 +46,7 @@ def get_memory_context() -> str | None:
         return _cache.get("value")
 
     # Query only the top memories instead of loading everything
-    repo = MemoryRepository()
+    repo = get_memory_store()
     selected = repo.get_top_memories(limit=_MAX_CONTEXT_MEMORIES)
     if not selected:
         _cache = {"_ts": now, "value": None}

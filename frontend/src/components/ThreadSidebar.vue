@@ -9,8 +9,9 @@ import {
   deleteThreadById,
   renameThreadById,
 } from '../store/chat'
-import { fetchEventsByMonth, type EventItem } from '../api/client'
+import { exportThread, fetchEventsByMonth, type EventItem } from '../api/client'
 import { calendarChangeSignal } from '../store/calendar'
+import { Brain, CalendarDays, Download, MessageSquare, Settings, Plus, Pencil, Trash2, ChevronLeft, ChevronRight } from '@lucide/vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -174,6 +175,23 @@ async function confirmDelete(id: string) {
   await deleteThreadById(id)
   confirmingDelete.value = null
 }
+
+async function downloadThread(e: MouseEvent, id: string, title: string) {
+  e.stopPropagation()
+  try {
+    const backup = await exportThread(id)
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || 'conversation'
+    link.href = url
+    link.download = `hyperagent-${safeTitle}.json`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  } catch {
+    window.alert('导出对话失败，请稍后重试')
+  }
+}
 </script>
 
 <template>
@@ -188,7 +206,7 @@ async function confirmDelete(id: string) {
             <span class="brand-name">HyperAgent</span>
           </div>
           <button class="new-chat-btn" @click="handleNewChat" title="新对话">
-            + 新对话
+            <Plus :size="16" /> 新对话
           </button>
         </div>
 
@@ -220,12 +238,17 @@ async function confirmDelete(id: string) {
                     class="action-btn"
                     title="重命名"
                     @click="(e) => startRename(e, thread.id, thread.title)"
-                  >✏️</button>
+                  ><Pencil :size="14" /></button>
+                  <button
+                    class="action-btn"
+                    title="导出对话"
+                    @click="(e) => downloadThread(e, thread.id, thread.title)"
+                  ><Download :size="14" /></button>
                   <button
                     class="action-btn delete-btn"
                     title="删除"
                     @click="(e) => handleDelete(e, thread.id)"
-                  >🗑️</button>
+                  ><Trash2 :size="14" /></button>
                 </span>
               </div>
             </template>
@@ -248,9 +271,9 @@ async function confirmDelete(id: string) {
       <template v-if="currentRoute === 'calendar'">
         <div class="mini-calendar">
           <div class="mini-month-header">
-            <button class="mini-nav-btn" @click="goMonth(-1)" title="上个月">◀</button>
+            <button class="mini-nav-btn" @click="goMonth(-1)" title="上个月"><ChevronLeft :size="16" /></button>
             <span class="mini-month-title">{{ yearLabel }}</span>
-            <button class="mini-nav-btn" @click="goMonth(1)" title="下个月">▶</button>
+            <button class="mini-nav-btn" @click="goMonth(1)" title="下个月"><ChevronRight :size="16" /></button>
           </div>
 
           <div class="mini-weekdays">
@@ -279,6 +302,15 @@ async function confirmDelete(id: string) {
           </div>
         </div>
       </template>
+
+      <template v-if="currentRoute === 'settings'">
+        <div class="settings-context">
+          <div class="brand">
+            <span class="brand-icon">H</span>
+            <span class="brand-name">HyperAgent</span>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- ── Tab navigation (always at bottom) ── -->
@@ -288,7 +320,7 @@ async function confirmDelete(id: string) {
         class="tab-btn"
         :class="{ active: currentRoute === 'chat' }"
       >
-        <span class="tab-icon">💬</span>
+        <MessageSquare :size="18" />
         <span class="tab-label">对话</span>
       </router-link>
       <router-link
@@ -296,8 +328,26 @@ async function confirmDelete(id: string) {
         class="tab-btn"
         :class="{ active: currentRoute === 'calendar' }"
       >
-        <span class="tab-icon">📅</span>
+        <CalendarDays :size="18" />
         <span class="tab-label">日程</span>
+      </router-link>
+      <router-link
+        to="/memory"
+        class="tab-btn"
+        :class="{ active: currentRoute === 'memory' }"
+        title="记忆"
+      >
+        <Brain :size="18" />
+        <span class="tab-label">记忆</span>
+      </router-link>
+      <router-link
+        to="/settings"
+        class="tab-btn"
+        :class="{ active: currentRoute === 'settings' }"
+        title="设置"
+      >
+        <Settings :size="18" />
+        <span class="tab-label">设置</span>
       </router-link>
     </div>
   </div>
@@ -399,6 +449,23 @@ async function confirmDelete(id: string) {
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.settings-context { padding: 16px; }
+.settings-context .brand-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #2f6fed;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .new-chat-btn:hover {

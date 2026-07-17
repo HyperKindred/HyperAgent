@@ -27,6 +27,11 @@ def init_db():
     # ── Migrations ────────────────────────────────────────────────
     # Add columns that were introduced after the initial schema.
     _migrate_add_column("reminders", "event_id", "INTEGER")
+    _migrate_add_column("memories", "embedding_fingerprint", "VARCHAR(64)")
+    _migrate_add_column("memories", "embedding_model", "VARCHAR(160)")
+    _migrate_add_column("memories", "embedding_dimensions", "INTEGER")
+    _migrate_add_column("memories", "recall_count", "INTEGER NOT NULL DEFAULT 0")
+    _migrate_add_column("memories", "last_recalled_at", "DATETIME")
 
     # Fix any threads with null timestamps (from earlier versions)
     _migrate_fix_null_timestamps("threads")

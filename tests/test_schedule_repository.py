@@ -69,6 +69,37 @@ class TestListEventsByDate:
         events = repo.list_events_by_date(date(2029, 6, 14))
         assert len(events) == 2
 
+    def test_list_uses_configured_local_day_boundaries(self, repo, monkeypatch):
+        import app.schedule.repository as repository_module
+
+        monkeypatch.setattr(repository_module.settings, "timezone", "Asia/Shanghai")
+        # 16:00 UTC on June 13 is midnight on June 14 in Shanghai.
+        expected = repo.create_event(EventCreate(
+            title="上海六月十四日凌晨", start_time=datetime(2029, 6, 13, 16, 0)
+        ))
+        repo.create_event(EventCreate(
+            title="上海六月十五日凌晨", start_time=datetime(2029, 6, 14, 16, 0)
+        ))
+
+        events = repo.list_events_by_date(date(2029, 6, 14))
+
+        assert [event.id for event in events] == [expected.id]
+
+    def test_date_range_excludes_first_day_of_next_month(self, repo, monkeypatch):
+        import app.schedule.repository as repository_module
+
+        monkeypatch.setattr(repository_module.settings, "timezone", "Asia/Shanghai")
+        june = repo.create_event(EventCreate(
+            title="六月末", start_time=datetime(2029, 6, 30, 8, 0)
+        ))
+        repo.create_event(EventCreate(
+            title="七月首日", start_time=datetime(2029, 7, 1, 8, 0)
+        ))
+
+        events = repo.list_events_by_date_range(date(2029, 6, 1), date(2029, 7, 1))
+
+        assert [event.id for event in events] == [june.id]
+
 
 class TestUpdateEvent:
     def test_update_title(self, repo, sample_event):

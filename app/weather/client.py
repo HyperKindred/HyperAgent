@@ -1,7 +1,7 @@
 """Weather API client with provider fallback.
 
 Try sequence:
-1. **OpenWeatherMap** — if API key is configured in `.env`
+1. **OpenWeatherMap** — if API key is configured in Settings
 2. **wttr.in** — free, no API key needed, works worldwide
 
 Only fails if both providers are unreachable.
@@ -90,7 +90,7 @@ def _try_openweathermap(city: str) -> str | None:
         )
         resp.raise_for_status()
         return _format_owm(resp.json())
-    except requests.RequestException as e:
+    except (requests.RequestException, ValueError) as e:
         logger.warning("OpenWeatherMap failed for %s: %s", city, e)
         return None
 
@@ -104,7 +104,7 @@ def _try_wttrin(city: str) -> str | None:
         )
         resp.raise_for_status()
         return _format_wttr(resp.json(), city)
-    except requests.RequestException as e:
+    except (requests.RequestException, ValueError) as e:
         logger.warning("wttr.in failed for %s: %s", city, e)
         return None
 
@@ -128,7 +128,7 @@ def get_weather(city: str) -> str:
     # Both failed
     return (
         f"❌ 查询 {city} 天气失败。\n"
-        "请确保网络连接正常，或在 .env 中配置有效的 OpenWeatherMap API Key。\n"
+        "请确保网络连接正常，或在设置中心配置有效的 OpenWeatherMap API Key。\n"
         "   👉 免费注册: https://home.openweathermap.org/users/sign_up\n"
         "   👉 获取 API Key: https://home.openweathermap.org/api_keys"
     )

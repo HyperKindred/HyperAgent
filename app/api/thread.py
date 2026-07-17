@@ -2,11 +2,12 @@
 
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.thread.models import ThreadCreate, ThreadResponse, ThreadUpdate
+from app.thread.models import ThreadCreate, ThreadResponse
 from app.thread.repository import ThreadRepository
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,58 @@ class NewThreadRequest(BaseModel):
 
 class RenameRequest(BaseModel):
     title: str
+
+
+def _visible_messages(checkpoint: dict) -> list[dict[str, str]]:
+    """Extract displayable messages from LangGraph's checkpoint payload."""
+    values = checkpoint.get("channel_values", {})
+    raw_messages = values.get("messages", []) if isinstance(values, dict) else []
+    messages: list[dict[str, str]] = []
+    for msg in raw_messages:
+        role = getattr(msg, "type", "")
+        if role not in ("human", "ai"):
+            continue
+        content = getattr(msg, "content", "")
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "text" and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+                elif item.get("type") == "image_url":
+                    parts.append("[图片]")
+            content = "\n".join(parts)
+        if not isinstance(content, str):
+            content = str(content)
+        messages.append({"role": "user" if role == "human" else "assistant", "content": content})
+    return messages
+
+
+def _thread_messages(thread_id: str) -> list[dict[str, str]]:
+    """Read displayable messages from the latest checkpoint for a thread."""
+    from app.memory.checkpointer import get_checkpointer
+
+    checkpointer = None
+    try:
+        checkpointer = get_checkpointer()
+        state = checkpointer.get_tuple(
+            {"configurable": {"thread_id": thread_id}}
+        )
+        return _visible_messages(state.checkpoint) if state is not None else []
+    except Exception as exc:
+        logger.warning("Failed to read thread history for %s: %s", thread_id, exc)
+        return []
+    finally:
+        # This endpoint creates a short-lived saver rather than using the
+        # agent's cached checkpointer, so it owns and must close its SQLite
+        # connection after the snapshot has been read.
+        conn = getattr(checkpointer, "conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception as exc:
+                logger.warning("Failed to close thread history connection: %s", exc)
 
 
 @router.get("/threads", response_model=list[ThreadResponse])
@@ -47,27 +100,22 @@ def get_thread_messages(thread_id: str):
     checkpoint snapshot.  Only ``human`` and ``ai`` messages are returned;
     tool-call internals are omitted.
     """
-    from app.memory.checkpointer import get_checkpointer
+    return {"thread_id": thread_id, "messages": _thread_messages(thread_id)}
 
-    checkpointer = get_checkpointer()
-    config = {"configurable": {"thread_id": thread_id}}
-    try:
-        state = checkpointer.get_tuple(config)
-    except Exception:
-        state = None
 
-    if state is None:
-        # Thread exists in metadata but has no checkpoints yet
-        return {"thread_id": thread_id, "messages": []}
-
-    messages = []
-    for msg in getattr(state.checkpoint, "messages", []):
-        role = getattr(msg, "type", "")
-        if role in ("human", "ai"):
-            content = getattr(msg, "content", "")
-            messages.append({"role": role, "content": content})
-
-    return {"thread_id": thread_id, "messages": messages}
+@router.get("/threads/{thread_id}/export")
+def export_thread(thread_id: str):
+    """Export a portable transcript without tool internals or credentials."""
+    thread = ThreadRepository().get_by_id(thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return {
+        "format": "hyperagent-thread-backup",
+        "version": 1,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "thread": ThreadResponse.model_validate(thread).model_dump(mode="json"),
+        "messages": _thread_messages(thread_id),
+    }
 
 
 @router.put("/threads/{thread_id}")

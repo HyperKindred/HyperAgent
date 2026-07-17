@@ -1,6 +1,7 @@
 """LangGraph agent definition using create_react_agent."""
 
 import base64
+import asyncio
 import json
 import logging
 from typing import Any, AsyncGenerator
@@ -42,6 +43,40 @@ def _get_llm(model: str | None = None) -> ChatOpenAI:
     return _llm
 
 
+def reset_llm_cache() -> None:
+    """Drop the cached client after runtime model settings change."""
+    global _llm
+    _llm = None
+
+
+def close_checkpointer() -> None:
+    """Close the cached SQLite connection during application shutdown."""
+    global _checkpointer
+    checkpointer = _checkpointer
+    _checkpointer = None
+    if checkpointer is None:
+        return
+    conn = getattr(checkpointer, "conn", None)
+    if conn is not None:
+        conn.close()
+
+
+def _public_model_error(exc: BaseException) -> str:
+    """Convert provider exceptions into safe, actionable user-facing text."""
+    detail = str(exc).lower()
+    if "401" in detail or "unauthorized" in detail or "api key" in detail:
+        return "模型服务鉴权失败，请在设置中检查 API Key。"
+    if "402" in detail or "insufficient" in detail or "balance" in detail:
+        return "模型服务余额或额度不足，请检查供应商账户。"
+    if "429" in detail or "rate limit" in detail:
+        return "模型服务请求过于频繁或额度受限，请稍后重试。"
+    if "timeout" in detail or "timed out" in detail:
+        return "模型服务响应超时，请检查网络或稍后重试。"
+    if "connection" in detail or "connect" in detail or "ssl" in detail:
+        return "无法连接模型服务，请在设置中检查 Base URL 和网络。"
+    return "模型请求失败，请在设置中测试连接后重试。"
+
+
 def _get_checkpointer() -> "SqliteSaver":
     global _checkpointer
     if _checkpointer is None:
@@ -50,16 +85,32 @@ def _get_checkpointer() -> "SqliteSaver":
 
 
 def _make_llm(model: str | None = None):
-    return ChatOpenAI(
-        model=model or settings.llm_model or settings.deepseek_model,
-        api_key=settings.llm_api_key or settings.deepseek_api_key,
-        base_url=settings.llm_base_url or settings.deepseek_base_url,
-        temperature=settings.llm_temperature,
-        max_tokens=settings.llm_max_tokens,
-        streaming=True,
-        timeout=60,
-        max_retries=3,
-    )
+    effective_model = model or settings.llm_model or settings.deepseek_model
+    kwargs: dict[str, Any] = {
+        "model": effective_model,
+        "api_key": settings.llm_api_key or settings.deepseek_api_key,
+        "base_url": settings.llm_base_url or settings.deepseek_base_url,
+        "max_tokens": settings.llm_max_tokens,
+        "streaming": True,
+        "timeout": 60,
+        "max_retries": 3,
+    }
+    if settings.llm_temperature is not None:
+        kwargs["temperature"] = settings.llm_temperature
+    # GPT-5.6 Chat Completions supports function tools only at effort=none.
+    if effective_model.lower().startswith("gpt-5.6"):
+        kwargs["reasoning_effort"] = settings.llm_reasoning_effort or "none"
+    return ChatOpenAI(**kwargs)
+
+
+def _effective_model_for_request(
+    requested_model: str | None, has_images: bool
+) -> str | None:
+    if not has_images:
+        return requested_model
+    if settings.vision_use_same_model:
+        return requested_model or settings.llm_model
+    return settings.vision_model or requested_model
 
 
 def build_agent(model: str | None = None):
@@ -92,7 +143,7 @@ def run_agent(
     """
     # ── 有图时自动切换到视觉模型 ────────────────────────────────────
     has_images = images and len(images) > 0
-    effective_model = settings.vision_model if (has_images and settings.vision_model) else model
+    effective_model = _effective_model_for_request(model, bool(has_images))
 
     agent = build_agent(model=effective_model)
     config = {"configurable": {"thread_id": thread_id}}
@@ -153,7 +204,7 @@ async def stream_agent(
     try:
         # ── 有图时自动切换到视觉模型 ──────────────────────────────────
         has_images = images and len(images) > 0
-        effective_model = settings.vision_model if (has_images and settings.vision_model) else model
+        effective_model = _effective_model_for_request(model, bool(has_images))
 
         agent = build_agent(model=effective_model)
         config = {"configurable": {"thread_id": thread_id}}
@@ -193,24 +244,20 @@ async def stream_agent(
                     content = event["data"]["chunk"].content
                     if content:
                         yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
-        except BaseException as inner_e:
-            import os as _os
-            _dbg = _os.path.join(_os.environ.get("APPDATA", _os.getcwd()), "HyperAgent", "_stream_debug.log")
-            with open(_dbg, "w") as _f:
-                _f.write(f"inner caught: {type(inner_e).__name__}: {inner_e}\n")
-            err_type = type(inner_e).__name__
-            err_msg = str(inner_e)
+        except asyncio.CancelledError:
+            raise
+        except Exception as inner_e:
             logger.exception("astream_events inner error")
-            yield f"data: {json.dumps({'type': 'error', 'content': f'[v2-inner] {err_type}: {err_msg}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'content': _public_model_error(inner_e)})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             return
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
-    except BaseException as e:
-        err_type = type(e).__name__
-        err_msg = str(e)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
         logger.exception("stream_agent outer error")
-        yield f"data: {json.dumps({'type': 'error', 'content': f'[v2-outer] {err_type}: {err_msg}'})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'content': _public_model_error(e)})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 

@@ -1,12 +1,14 @@
 """Data-access layer for schedule events."""
 
-from datetime import date, datetime
+from datetime import date
 from contextlib import contextmanager
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.schedule.models import Event, EventCreate, EventUpdate
+from app.config import settings
+from app.utils.time import local_date_bounds, now as utc_now
 
 
 class ScheduleRepository:
@@ -51,24 +53,24 @@ class ScheduleRepository:
             return db.query(Event).filter(Event.id == event_id).first()
 
     def list_events_by_date(self, dt: date) -> list[Event]:
-        """Return all events that occur on *dt* (any time that day)."""
+        """Return all events in the configured timezone's local calendar day."""
         with self._session() as db:
-            start = datetime(dt.year, dt.month, dt.day)
-            end = datetime(dt.year, dt.month, dt.day, 23, 59, 59)
+            start, end = local_date_bounds(dt, settings.timezone)
             return (
                 db.query(Event)
-                .filter(Event.start_time.between(start, end))
+                .filter(Event.start_time >= start, Event.start_time < end)
                 .order_by(Event.start_time)
                 .all()
             )
 
     def list_events_by_date_range(self, start: date, end: date) -> list[Event]:
+        """Return events in ``[start, end)`` local calendar days."""
         with self._session() as db:
-            start_dt = datetime(start.year, start.month, start.day)
-            end_dt = datetime(end.year, end.month, end.day, 23, 59, 59)
+            start_dt, _ = local_date_bounds(start, settings.timezone)
+            end_dt, _ = local_date_bounds(end, settings.timezone)
             return (
                 db.query(Event)
-                .filter(Event.start_time.between(start_dt, end_dt))
+                .filter(Event.start_time >= start_dt, Event.start_time < end_dt)
                 .order_by(Event.start_time)
                 .all()
             )
@@ -99,7 +101,7 @@ class ScheduleRepository:
         """Delete all events whose end_time (or start_time) is in the past.
         Returns the count of deleted events."""
         with self._session() as db:
-            now = datetime.now()
+            now = utc_now()
             expired = (
                 db.query(Event)
                 .filter(
@@ -132,7 +134,7 @@ class ScheduleRepository:
     def get_upcoming_events(self, limit: int = 10) -> list[Event]:
         """Get the next *limit* events starting from now."""
         with self._session() as db:
-            now = datetime.now()
+            now = utc_now()
             return (
                 db.query(Event)
                 .filter(Event.start_time >= now)

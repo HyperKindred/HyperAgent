@@ -126,8 +126,16 @@ def _parse_docx(content: bytes) -> str:
         logger.warning("DOCX parse error: %s", exc)
         return f"[Word 文档解析失败：文件格式错误或已损坏]"
 
-    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-    return "\n\n".join(paragraphs) if paragraphs else "[Word 文档中未提取到文本内容]"
+    sections = [p.text for p in doc.paragraphs if p.text.strip()]
+    for index, table in enumerate(doc.tables, start=1):
+        rows = []
+        for row in table.rows:
+            cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
+            if any(cells):
+                rows.append(" | ".join(cells))
+        if rows:
+            sections.append(f"--- 表格 {index} ---\n" + "\n".join(rows))
+    return "\n\n".join(sections) if sections else "[Word 文档中未提取到文本内容]"
 
 
 def _fallback(content: bytes, ext: str) -> str:
