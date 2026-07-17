@@ -15,7 +15,7 @@ from app.api import thread as thread_api
 from app.schedule.database import init_db
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
 
 
 def _find_frontend_dist() -> Path | None:
