@@ -35,10 +35,8 @@ frontend/electron/
 frontend/main.cjs
 *.spec
 
-# Project instructions (not for public repo)
+# Local assistant instructions
 CLAUDE.md
-AGENTS.md
-AGENTS.md
 
 # Logs
 log/
