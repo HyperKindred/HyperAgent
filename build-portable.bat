@@ -29,7 +29,15 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 rem ---- (3.5/5) Copy frontend dist alongside backend exe --------------
 echo === (3.5/5) Copy frontend dist ===
+if exist frontend\backend-resources\dist (
+  rmdir /s /q frontend\backend-resources\dist
+  if exist frontend\backend-resources\dist (
+    echo ERROR: Unable to clear the previous frontend resources.
+    exit /b 1
+  )
+)
 xcopy /E /I /Y frontend\dist frontend\backend-resources\dist
+if %errorlevel% neq 0 exit /b %errorlevel%
 
 rem ---- (4/5) Package Electron portable -------------------------------
 echo === (4/5) Package Electron portable ===
